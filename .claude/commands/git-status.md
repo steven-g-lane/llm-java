@@ -1,0 +1,1 @@
+Tell me current git status -- what branch we are on, when the most recent commit was, and what if anything is uncommitted

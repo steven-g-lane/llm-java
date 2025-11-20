@@ -27,6 +27,24 @@ public final class Conversation {
 
     private final List<Message> messages = new ArrayList<>();
 
+    // --------- Static Factories ---------
+
+    /**
+     * Creates a new Conversation for the specified model with a generated default name.
+     */
+    public static Conversation create(ModelId modelId) {
+        return new Conversation(modelId);
+    }
+
+    /**
+     * Creates a new Conversation for the specified model with the given name.
+     */
+    public static Conversation create(ModelId modelId, String name) {
+        return new Conversation(modelId, name);
+    }
+
+    // --------- Constructors ---------
+
     /**
      * Creates a new Conversation with a generated default name.
      * id is null until the database assigns it.
