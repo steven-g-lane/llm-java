@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 /**
  * Integration test for AnthropicConversationManager.
  *
@@ -42,25 +44,52 @@ public class AnthropicIntegrationTest {
         System.out.println("Prompt: " + prompt);
         System.out.println();
 
-        // Send the message (this will currently fail at fromVendorResponse)
-        try {
-            Message response = manager.sendMessage(conversation, userMessage);
+        // Send the message and verify the full round-trip conversion
+        Message response = manager.sendMessage(conversation, userMessage);
 
-            System.out.println("=== Response received ===");
-            System.out.println("Role: " + response.role());
-            System.out.println("Blocks: " + response.blocks().size());
+        System.out.println("=== Response received ===");
+        System.out.println("Role: " + response.role());
+        System.out.println("Blocks: " + response.blocks().size());
 
-            for (MessageBlock block : response.blocks()) {
-                if (block instanceof TextBlock textBlock) {
-                    System.out.println("Text: " + textBlock.text());
-                }
+        // Verify the response structure
+        assertNotNull(response, "Response should not be null");
+        assertEquals(MessageRole.ASSISTANT, response.role(), "Response role should be ASSISTANT");
+        assertFalse(response.blocks().isEmpty(), "Response should have at least one block");
+
+        // Verify and display each block
+        for (int i = 0; i < response.blocks().size(); i++) {
+            MessageBlock block = response.blocks().get(i);
+            System.out.println("\n=== Block " + (i + 1) + " ===");
+
+            if (block instanceof TextBlock textBlock) {
+                System.out.println("Type: TextBlock");
+                System.out.println("Format: " + textBlock.format());
+                System.out.println("Text: " + textBlock.text());
+
+                // Verify text block properties
+                assertNotNull(textBlock.text(), "Text should not be null");
+                assertNotNull(textBlock.format(), "Format should not be null");
+
+                // Anthropic typically returns markdown, but we should accept any format
+                assertTrue(
+                    textBlock.format() == TextBlockFormat.MARKDOWN ||
+                    textBlock.format() == TextBlockFormat.PLAIN ||
+                    textBlock.format() == TextBlockFormat.HTML,
+                    "Format should be MARKDOWN, PLAIN, or HTML"
+                );
+
+            } else if (block instanceof UnknownBlock unknownBlock) {
+                System.out.println("Type: UnknownBlock");
+                System.out.println("Data: " + unknownBlock.vendorData());
+
+                // We don't expect unknown blocks for a simple text response, but it's not an error
+                System.out.println("WARNING: Received UnknownBlock - this might indicate a new content type");
+
+            } else {
+                fail("Unexpected block type: " + block.getClass().getName());
             }
-
-        } catch (UnsupportedOperationException e) {
-            System.out.println("=== Expected error (fromVendorResponse not yet implemented) ===");
-            System.out.println("Error: " + e.getMessage());
-            System.out.println();
-            System.out.println("The API call was successful, but we can't convert the response yet.");
         }
+
+        System.out.println("\n=== Round-trip conversion successful! ===");
     }
 }

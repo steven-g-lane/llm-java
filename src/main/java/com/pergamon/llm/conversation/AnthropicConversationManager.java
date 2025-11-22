@@ -2,10 +2,12 @@ package com.pergamon.llm.conversation;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
+// Note: TextBlock from Anthropic SDK accessed via fully qualified name to avoid conflict with our TextBlock
 
 import java.util.ArrayList;
 import java.util.List;
@@ -143,7 +145,69 @@ public class AnthropicConversationManager
 
     @Override
     protected Message fromVendorResponse(com.anthropic.models.messages.Message vendorResponse) {
-        // TODO: Convert Anthropic's Message to our Message
-        throw new UnsupportedOperationException("Not yet implemented");
+        // Convert role from Anthropic to our MessageRole
+        // The _role() method returns a JsonValue that should always be "assistant"
+        // Handle the raw Optional type from asString()
+        String roleString;
+        var optionalRole = vendorResponse._role().asString();
+        if (optionalRole.isPresent()) {
+            roleString = (String) optionalRole.get();
+        } else {
+            roleString = "assistant";  // Default fallback
+        }
+        MessageRole role = fromVendorRole(roleString);
+
+        // Convert Anthropic ContentBlocks to our MessageBlocks
+        List<MessageBlock> blocks = new ArrayList<>();
+        for (ContentBlock contentBlock : vendorResponse.content()) {
+            blocks.add(fromVendorContentBlock(contentBlock));
+        }
+
+        return new Message(role, blocks);
+    }
+
+    /**
+     * Converts Anthropic's role string to our MessageRole.
+     *
+     * @param roleString the Anthropic role string
+     * @return our MessageRole
+     * @throws UnsupportedOperationException for unsupported roles
+     */
+    protected MessageRole fromVendorRole(String roleString) {
+        return switch (roleString) {
+            case "assistant" -> MessageRole.ASSISTANT;
+            case "user" -> MessageRole.USER;
+            default -> throw new UnsupportedOperationException("Unsupported Anthropic role: " + roleString);
+        };
+    }
+
+    /**
+     * Converts Anthropic's ContentBlock to our MessageBlock.
+     * Uses the Optional getters to detect which type of block this is.
+     *
+     * @param contentBlock Anthropic's ContentBlock
+     * @return our MessageBlock
+     */
+    protected MessageBlock fromVendorContentBlock(ContentBlock contentBlock) {
+        // Check if it's a text block
+        if (contentBlock.text().isPresent()) {
+            return fromVendorTextBlock(contentBlock.text().get());
+        }
+
+        // If we don't recognize the block type, wrap it as UnknownBlock
+        return new UnknownBlock(contentBlock.toString());
+    }
+
+    /**
+     * Converts Anthropic's TextBlock to our TextBlock.
+     * Uses ConversationUtils to programmatically detect the text format.
+     *
+     * @param anthropicTextBlock Anthropic's TextBlock
+     * @return our TextBlock
+     */
+    protected MessageBlock fromVendorTextBlock(com.anthropic.models.messages.TextBlock anthropicTextBlock) {
+        String text = anthropicTextBlock.text();
+        TextBlockFormat format = ConversationUtils.detectTextFormat(text);
+        return new TextBlock(format, text);
     }
 }
