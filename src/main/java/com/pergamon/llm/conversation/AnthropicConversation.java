@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * ConversationManager implementation for Anthropic's Claude models.
+ * Conversation implementation for Anthropic's Claude models.
  *
  * This class handles the conversion between our generic Message format and
  * Anthropic's SDK message format, and manages communication with the Anthropic API.
@@ -22,8 +22,8 @@ import java.util.List;
  * - V: MessageParam (the vendor-specific message type)
  * - R: com.anthropic.models.messages.Message (the response type, disambiguated from our Message class)
  */
-public class AnthropicConversationManager
-        extends ConversationManager<MessageParam, com.anthropic.models.messages.Message> {
+public class AnthropicConversation
+        extends Conversation<MessageParam, com.anthropic.models.messages.Message> {
 
     private static final int MAX_TOKENS = 4096;
 
@@ -31,12 +31,32 @@ public class AnthropicConversationManager
     private final AnthropicClient client;
 
     /**
-     * Creates an Anthropic conversation manager with the specified API key.
-     * Instantiates one AnthropicOkHttpClient per manager instance.
+     * Creates an Anthropic conversation with the specified model ID and API key.
+     * Instantiates one AnthropicOkHttpClient per conversation instance.
      *
+     * @param modelId the model ID
      * @param apiKey the Anthropic API key
      */
-    public AnthropicConversationManager(String apiKey) {
+    public AnthropicConversation(ModelId modelId, String apiKey) {
+        super(modelId);
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException("API key cannot be null or blank");
+        }
+        this.apiKey = apiKey;
+        this.client = AnthropicOkHttpClient.builder()
+                .apiKey(apiKey)
+                .build();
+    }
+
+    /**
+     * Creates an Anthropic conversation with the specified model ID, name, and API key.
+     *
+     * @param modelId the model ID
+     * @param name the conversation name
+     * @param apiKey the Anthropic API key
+     */
+    public AnthropicConversation(ModelId modelId, String name, String apiKey) {
+        super(modelId, name);
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalArgumentException("API key cannot be null or blank");
         }
@@ -102,26 +122,52 @@ public class AnthropicConversationManager
     }
 
     @Override
-    protected com.anthropic.models.messages.Message sendMessageToVendor(
-            Conversation conversation,
-            MessageParam vendorMessage) {
+    protected com.anthropic.models.messages.Message sendMessageToVendor(MessageParam vendorMessage) {
         try {
-            // Get model ID from conversation
-            String model = conversation.modelId().apiModelName();
+            // Get model ID
+            String model = modelId().apiModelName();
 
-            // Build MessageCreateParams with model, maxTokens, and the message
-            MessageCreateParams createParams = MessageCreateParams.builder()
+            // Build MessageCreateParams with model, maxTokens, and all messages in history
+            MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder()
                     .model(model)
-                    .maxTokens(MAX_TOKENS)
-                    .addMessage(vendorMessage)
-                    .build();
+                    .maxTokens(MAX_TOKENS);
+
+            // Add all vendor messages (the history)
+            for (MessageParam msg : vendorMessages) {
+                paramsBuilder.addMessage(msg);
+            }
 
             // Make the synchronous (non-streaming) API call
-            return client.messages().create(createParams);
+            return client.messages().create(paramsBuilder.build());
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to send message to Anthropic", e);
         }
+    }
+
+    @Override
+    protected MessageParam vendorResponseToVendorMessage(com.anthropic.models.messages.Message vendorResponse) {
+        // Convert the response ContentBlocks to ContentBlockParams for storage in history
+        // The response role is always "assistant"
+        List<ContentBlockParam> contentBlockParams = new ArrayList<>();
+
+        for (ContentBlock contentBlock : vendorResponse.content()) {
+            // Convert each ContentBlock to a ContentBlockParam
+            if (contentBlock.text().isPresent()) {
+                // It's a text block
+                com.anthropic.models.messages.TextBlock textBlock = contentBlock.text().get();
+                TextBlockParam textBlockParam = TextBlockParam.builder()
+                        .text(textBlock.text())
+                        .build();
+                contentBlockParams.add(ContentBlockParam.ofText(textBlockParam));
+            }
+            // Add support for other block types (image, etc.) as needed
+        }
+
+        return MessageParam.builder()
+                .role(MessageParam.Role.ASSISTANT)
+                .content(MessageParam.Content.ofBlockParams(contentBlockParams))
+                .build();
     }
 
     @Override

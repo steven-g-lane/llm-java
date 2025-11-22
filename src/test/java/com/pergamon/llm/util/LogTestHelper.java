@@ -9,10 +9,11 @@ import java.util.stream.Collectors;
 
 /**
  * Helper utilities for testing log file output.
+ * Uses test-specific log files in target/test-logs to avoid interference between tests.
  */
 public class LogTestHelper {
 
-    private static final Path LOGS_DIR = Paths.get("logs");
+    private static final Path LOGS_DIR = Paths.get("target/test-logs");
     private static final Path API_LOG = LOGS_DIR.resolve("api.log");
     private static final Path ERROR_LOG = LOGS_DIR.resolve("error.log");
 

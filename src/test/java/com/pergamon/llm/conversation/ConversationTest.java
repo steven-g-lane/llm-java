@@ -7,9 +7,47 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ConversationTest {
 
+    /**
+     * Test implementation of Conversation for unit testing.
+     * This stub implementation allows us to test the base Conversation functionality
+     * without requiring actual vendor API calls.
+     */
+    private static class TestConversation extends Conversation<String, String> {
+        TestConversation(ModelId modelId) {
+            super(modelId);
+        }
+
+        TestConversation(ModelId modelId, String name) {
+            super(modelId, name);
+        }
+
+        @Override
+        protected String toVendorMessage(Message message) {
+            return "vendor-message";
+        }
+
+        @Override
+        protected String sendMessageToVendor(String vendorMessage) {
+            return "vendor-response";
+        }
+
+        @Override
+        protected String vendorResponseToVendorMessage(String vendorResponse) {
+            return "vendor-response-message";
+        }
+
+        @Override
+        protected Message fromVendorResponse(String vendorResponse) {
+            return new Message(MessageRole.ASSISTANT, java.util.List.of(
+                new TextBlock(TextBlockFormat.PLAIN, "test response")
+            ));
+        }
+    }
+
+
     @Test
     void testCreateConversationWithModelId() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertEquals(CLAUDE_SONNET_45, conversation.modelId());
         assertFalse(conversation.id().isPresent(), "ID should be null until set by database");
@@ -21,7 +59,7 @@ class ConversationTest {
 
     @Test
     void testCreateConversationWithCustomName() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45, SAMPLE_CONVERSATION_NAME);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45, SAMPLE_CONVERSATION_NAME);
 
         assertEquals(SAMPLE_CONVERSATION_NAME, conversation.name());
         assertEquals(CLAUDE_SONNET_45, conversation.modelId());
@@ -29,7 +67,7 @@ class ConversationTest {
 
     @Test
     void testCreateConversationWithNullNameGeneratesDefault() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45, null);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45, null);
 
         assertNotNull(conversation.name());
         assertTrue(conversation.name().startsWith("Untitled-"));
@@ -37,7 +75,7 @@ class ConversationTest {
 
     @Test
     void testCreateConversationWithBlankNameGeneratesDefault() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45, "   ");
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45, "   ");
 
         assertNotNull(conversation.name());
         assertTrue(conversation.name().startsWith("Untitled-"));
@@ -46,13 +84,13 @@ class ConversationTest {
     @Test
     void testCreateConversationWithNullModelIdThrows() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new Conversation(null);
+            new TestConversation(null);
         }, "Should throw when modelId is null");
     }
 
     @Test
     void testSetIdByPersistenceLayer() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertFalse(conversation.id().isPresent(), "ID should be absent initially");
 
@@ -64,7 +102,7 @@ class ConversationTest {
 
     @Test
     void testRenameConversation() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45, "Original Name");
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45, "Original Name");
 
         conversation.rename("New Name");
 
@@ -73,7 +111,7 @@ class ConversationTest {
 
     @Test
     void testRenameWithNullThrows() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertThrows(IllegalArgumentException.class, () -> {
             conversation.rename(null);
@@ -82,7 +120,7 @@ class ConversationTest {
 
     @Test
     void testRenameWithBlankThrows() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertThrows(IllegalArgumentException.class, () -> {
             conversation.rename("   ");
@@ -91,7 +129,7 @@ class ConversationTest {
 
     @Test
     void testStarConversation() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertFalse(conversation.isStarred(), "Should not be starred initially");
 
@@ -102,7 +140,7 @@ class ConversationTest {
 
     @Test
     void testUnstarConversation() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
         conversation.star();
 
         assertTrue(conversation.isStarred());
@@ -114,7 +152,7 @@ class ConversationTest {
 
     @Test
     void testSetStarred() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         conversation.setStarred(true);
         assertTrue(conversation.isStarred());
@@ -125,7 +163,7 @@ class ConversationTest {
 
     @Test
     void testToggleStar() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertFalse(conversation.isStarred());
 
@@ -138,7 +176,7 @@ class ConversationTest {
 
     @Test
     void testVendorConversationId() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertFalse(conversation.vendorConversationId().isPresent(), "Should be absent initially");
 
@@ -150,7 +188,7 @@ class ConversationTest {
 
     @Test
     void testVendorProjectId() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertFalse(conversation.vendorProjectId().isPresent(), "Should be absent initially");
 
@@ -162,7 +200,7 @@ class ConversationTest {
 
     @Test
     void testAppendMessage() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
         Message message = createUserMessage(SAMPLE_TEXT);
 
         conversation.append(message);
@@ -173,7 +211,7 @@ class ConversationTest {
 
     @Test
     void testAppendMultipleMessages() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         Message msg1 = createUserMessage("First message");
         Message msg2 = createAssistantMessage("Response");
@@ -191,7 +229,7 @@ class ConversationTest {
 
     @Test
     void testAppendNullMessageThrows() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         assertThrows(IllegalArgumentException.class, () -> {
             conversation.append(null);
@@ -200,7 +238,7 @@ class ConversationTest {
 
     @Test
     void testMessagesListIsUnmodifiable() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
         Message message = createUserMessage(SAMPLE_TEXT);
         conversation.append(message);
 
@@ -211,7 +249,7 @@ class ConversationTest {
 
     @Test
     void testClearMessages() {
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45);
 
         conversation.append(createUserMessage("Message 1"));
         conversation.append(createAssistantMessage("Message 2"));
@@ -225,8 +263,8 @@ class ConversationTest {
 
     @Test
     void testDefaultNameIsUnique() {
-        Conversation conv1 = new Conversation(CLAUDE_SONNET_45);
-        Conversation conv2 = new Conversation(CLAUDE_SONNET_45);
+        Conversation conv1 = new TestConversation(CLAUDE_SONNET_45);
+        Conversation conv2 = new TestConversation(CLAUDE_SONNET_45);
 
         assertNotEquals(conv1.name(), conv2.name(),
                 "Default names should be unique (different timestamps/random suffixes)");
@@ -235,7 +273,7 @@ class ConversationTest {
     @Test
     void testFullConversationWorkflow() {
         // Create conversation
-        Conversation conversation = new Conversation(CLAUDE_SONNET_45, SAMPLE_CONVERSATION_NAME);
+        Conversation conversation = new TestConversation(CLAUDE_SONNET_45, SAMPLE_CONVERSATION_NAME);
 
         // Simulate database persistence
         conversation.setId(SAMPLE_DB_UUID);

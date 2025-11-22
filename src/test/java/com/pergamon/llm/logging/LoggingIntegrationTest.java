@@ -30,10 +30,10 @@ public class LoggingIntegrationTest {
 
         // Create a conversation with a Claude model
         ModelId modelId = new ModelId(Vendor.ANTHROPIC, "claude-sonnet-4-20250514");
-        Conversation conversation = Conversation.create(modelId, "Logging Test");
 
-        // Create the conversation manager
-        ConversationManager<?, ?> manager = ConversationManager.forModel(modelId, config);
+        // Create the conversation using the factory method
+        Conversation<?, ?> conversation = Conversation.forModel(modelId, config);
+        conversation.rename("Logging Test");
 
         // Create a simple user message
         Message userMessage = new Message(
@@ -48,7 +48,7 @@ public class LoggingIntegrationTest {
         System.out.println("Initial API log entries: " + initialApiLogCount);
 
         // Send the message - this should trigger API logging via the aspect
-        Message response = manager.sendMessage(conversation, userMessage);
+        Message response = conversation.sendMessage(userMessage);
 
         // Verify the message was successful
         assertNotNull(response, "Response should not be null");
@@ -88,12 +88,12 @@ public class LoggingIntegrationTest {
         long initialErrorLogCount = LogTestHelper.getErrorLogEntryCount();
         System.out.println("Initial error log entries: " + initialErrorLogCount);
 
-        // Create a conversation manager with an invalid API key to trigger an error
+        // Create a conversation with an invalid API key to trigger an error
         ModelId modelId = new ModelId(Vendor.ANTHROPIC, "claude-sonnet-4-20250514");
-        Conversation conversation = Conversation.create(modelId, "Error Test");
 
         // Use an invalid API key
-        AnthropicConversationManager manager = new AnthropicConversationManager("invalid-api-key");
+        AnthropicConversation conversation = new AnthropicConversation(modelId, "invalid-api-key");
+        conversation.rename("Error Test");
 
         // Create a simple user message
         Message userMessage = new Message(
@@ -104,7 +104,7 @@ public class LoggingIntegrationTest {
         // Attempt to send the message - this should fail and trigger exception logging
         System.out.println("\nAttempting to send message with invalid API key...");
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            manager.sendMessage(conversation, userMessage);
+            conversation.sendMessage(userMessage);
         });
 
         System.out.println("Exception caught: " + exception.getClass().getSimpleName());
@@ -124,8 +124,8 @@ public class LoggingIntegrationTest {
             "Error log should have new entries (initial: " + initialErrorLogCount + ", final: " + finalErrorLogCount + ")");
 
         // Verify the exception was logged from the correct method
-        assertTrue(LogTestHelper.errorLogContainsMethodError("AnthropicConversationManager", "sendMessageToVendor"),
-            "Error log should contain exception from AnthropicConversationManager.sendMessageToVendor()");
+        assertTrue(LogTestHelper.errorLogContainsMethodError("AnthropicConversation", "sendMessageToVendor"),
+            "Error log should contain exception from AnthropicConversation.sendMessageToVendor()");
 
         // Display the error log
         System.out.println("\n=== Error Log Contents ===");
@@ -142,8 +142,10 @@ public class LoggingIntegrationTest {
         // Load API configuration
         ApiConfig config = FileApiConfig.fromResource("/api-keys.properties");
         ModelId modelId = new ModelId(Vendor.ANTHROPIC, "claude-sonnet-4-20250514");
-        Conversation conversation = Conversation.create(modelId, "Multi-call Test");
-        ConversationManager<?, ?> manager = ConversationManager.forModel(modelId, config);
+
+        // Create the conversation using the factory method
+        Conversation<?, ?> conversation = Conversation.forModel(modelId, config);
+        conversation.rename("Multi-call Test");
 
         // Get initial log count
         long initialApiLogCount = LogTestHelper.getApiLogEntryCount();
@@ -156,7 +158,7 @@ public class LoggingIntegrationTest {
                 MessageRole.USER,
                 List.of(new TextBlock(TextBlockFormat.PLAIN, "Count to " + i))
             );
-            manager.sendMessage(conversation, userMessage);
+            conversation.sendMessage(userMessage);
         }
 
         // Small delay to ensure logs are flushed

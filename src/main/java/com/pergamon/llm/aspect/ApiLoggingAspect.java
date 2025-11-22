@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Aspect that logs all LLM API requests and responses.
- * Intercepts sendMessageToVendor calls across all ConversationManager implementations.
+ * Intercepts sendMessageToVendor calls across all Conversation implementations.
  */
 @Aspect
 public class ApiLoggingAspect {
@@ -27,15 +27,15 @@ public class ApiLoggingAspect {
      * @return the vendor response object
      * @throws Throwable if the underlying method throws an exception
      */
-    @Around("execution(protected * com.pergamon.llm.conversation.ConversationManager+.sendMessageToVendor(..))")
+    @Around("execution(protected * com.pergamon.llm.conversation.Conversation+.sendMessageToVendor(..))")
     public Object logApiCall(ProceedingJoinPoint joinPoint) throws Throwable {
-        // Get the vendor name from the class name (e.g., "AnthropicConversationManager" -> "ANTHROPIC")
+        // Get the vendor name from the class name (e.g., "AnthropicConversation" -> "ANTHROPIC")
         String className = joinPoint.getTarget().getClass().getSimpleName();
-        String vendorName = className.replace("ConversationManager", "").toUpperCase();
+        String vendorName = className.replace("Conversation", "").toUpperCase();
 
-        // Get the vendor message (second argument to sendMessageToVendor)
+        // Get the vendor message (first argument to sendMessageToVendor)
         Object[] args = joinPoint.getArgs();
-        Object vendorMessage = args.length > 1 ? args[1] : null;
+        Object vendorMessage = args.length > 0 ? args[0] : null;
 
         // Log the request
         if (vendorMessage != null) {

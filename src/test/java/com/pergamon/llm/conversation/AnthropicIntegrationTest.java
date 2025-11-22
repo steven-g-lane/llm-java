@@ -9,7 +9,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Integration test for AnthropicConversationManager.
+ * Integration test for AnthropicConversation.
  *
  * This test requires a valid API key in src/main/resources/api-keys.properties
  * and will make actual API calls to Anthropic.
@@ -23,10 +23,10 @@ public class AnthropicIntegrationTest {
 
         // Create a conversation with a Claude model
         ModelId modelId = new ModelId(Vendor.ANTHROPIC, "claude-sonnet-4-20250514");
-        Conversation conversation = Conversation.create(modelId, "Integration Test Conversation");
 
-        // Create the conversation manager
-        ConversationManager<?, ?> manager = ConversationManager.forModel(modelId, config);
+        // Create the conversation using the factory method
+        Conversation<?, ?> conversation = Conversation.forModel(modelId, config);
+        conversation.rename("Integration Test Conversation");
 
         // Create a richer user message
         String prompt = """
@@ -45,7 +45,7 @@ public class AnthropicIntegrationTest {
         System.out.println();
 
         // Send the message and verify the full round-trip conversion
-        Message response = manager.sendMessage(conversation, userMessage);
+        Message response = conversation.sendMessage(userMessage);
 
         System.out.println("=== Response received ===");
         System.out.println("Role: " + response.role());

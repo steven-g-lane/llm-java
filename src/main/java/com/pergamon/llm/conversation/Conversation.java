@@ -1,5 +1,7 @@
 package com.pergamon.llm.conversation;
 
+import com.pergamon.llm.config.ApiConfig;
+
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -8,10 +10,23 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * A vendor-agnostic conversation that holds a sequence of Messages and
- * metadata for both local and vendor-specific tracking.
+ * Abstract base class for conversations with different LLM vendors.
+ *
+ * This class merges conversation state and conversation management, implementing
+ * the Template Method pattern to handle the common flow of:
+ * 1. Converting our Message to vendor-specific format
+ * 2. Sending to the vendor API
+ * 3. Converting the vendor response back to our Message format
+ * 4. Automatically appending messages to both generic and vendor-specific histories
+ *
+ * Maintains two parallel conversation histories:
+ * - messages: Generic Message objects (vendor-agnostic)
+ * - vendorMessages: Vendor-specific message objects (e.g., Anthropic's MessageParam)
+ *
+ * @param <V> The vendor-specific message type (e.g., MessageParam for Anthropic)
+ * @param <R> The vendor-specific response type (e.g., com.anthropic.models.messages.Message)
  */
-public final class Conversation {
+public abstract class Conversation<V, R> {
 
     // Nullable: assigned by the database (UUID string) when persisted
     private String id;
@@ -25,22 +40,48 @@ public final class Conversation {
     private String vendorConversationId;
     private String vendorProjectId;
 
+    /**
+     * Generic vendor-agnostic conversation history.
+     */
     private final List<Message> messages = new ArrayList<>();
 
-    // --------- Static Factories ---------
+    /**
+     * Vendor-specific conversation history.
+     * Maintained in parallel with messages to avoid repeated serialization/deserialization.
+     */
+    protected final List<V> vendorMessages = new ArrayList<>();
+
+    // --------- Static Factory Methods ---------
 
     /**
-     * Creates a new Conversation for the specified model with a generated default name.
+     * Factory method to create a Conversation for a specific model.
+     *
+     * @param modelId the model to create a conversation for
+     * @param config the API configuration containing vendor API keys
+     * @return a Conversation instance for the model's vendor
+     * @throws IllegalArgumentException if the vendor is not supported
      */
-    public static Conversation create(ModelId modelId) {
-        return new Conversation(modelId);
+    public static Conversation<?, ?> forModel(ModelId modelId, ApiConfig config) {
+        return switch (modelId.vendor()) {
+            case ANTHROPIC -> createAnthropicConversation(modelId, config);
+            case OPENAI -> createOpenAIConversation(modelId, config);
+            case GOOGLE -> createGoogleConversation(modelId, config);
+        };
     }
 
-    /**
-     * Creates a new Conversation for the specified model with the given name.
-     */
-    public static Conversation create(ModelId modelId, String name) {
-        return new Conversation(modelId, name);
+    private static Conversation<?, ?> createAnthropicConversation(ModelId modelId, ApiConfig config) {
+        String apiKey = config.getApiKeyOrThrow(Vendor.ANTHROPIC);
+        return new AnthropicConversation(modelId, apiKey);
+    }
+
+    private static Conversation<?, ?> createOpenAIConversation(ModelId modelId, ApiConfig config) {
+        // TODO: Implement OpenAI conversation
+        throw new UnsupportedOperationException("OpenAI conversation not yet implemented");
+    }
+
+    private static Conversation<?, ?> createGoogleConversation(ModelId modelId, ApiConfig config) {
+        // TODO: Implement Google conversation
+        throw new UnsupportedOperationException("Google conversation not yet implemented");
     }
 
     // --------- Constructors ---------
@@ -49,14 +90,14 @@ public final class Conversation {
      * Creates a new Conversation with a generated default name.
      * id is null until the database assigns it.
      */
-    public Conversation(ModelId modelId) {
+    protected Conversation(ModelId modelId) {
         this(modelId, null);
     }
 
     /**
      * Creates a Conversation with an explicit name (or default if null/blank).
      */
-    public Conversation(ModelId modelId, String name) {
+    protected Conversation(ModelId modelId, String name) {
         if (modelId == null) {
             throw new IllegalArgumentException("modelId cannot be null");
         }
@@ -138,6 +179,86 @@ public final class Conversation {
         this.vendorProjectId = vendorProjectId;
     }
 
+    // --------- Core Conversation Logic ---------
+
+    /**
+     * Sends a message in the conversation and returns the response.
+     *
+     * This method implements the template pattern:
+     * 1. Appends the user message to messages
+     * 2. Converts to vendor-specific format
+     * 3. Appends the vendor message to vendorMessages
+     * 4. Calls the vendor API
+     * 5. Appends the vendor response to vendorMessages
+     * 6. Converts response back to our Message format
+     * 7. Appends the response message to messages
+     *
+     * @param message the message to send
+     * @return the response message from the LLM
+     */
+    public Message sendMessage(Message message) {
+        // 1. Append the user message to generic history
+        messages.add(message);
+
+        // 2. Convert our Message to vendor-specific format
+        V vendorMessage = toVendorMessage(message);
+
+        // 3. Append the vendor message to vendor-specific history
+        vendorMessages.add(vendorMessage);
+
+        // 4. Call vendor-specific send implementation
+        R vendorResponse = sendMessageToVendor(vendorMessage);
+
+        // 5. Convert vendor response to vendor message format and append
+        V vendorResponseMessage = vendorResponseToVendorMessage(vendorResponse);
+        vendorMessages.add(vendorResponseMessage);
+
+        // 6. Convert vendor response back to our Message format
+        Message responseMessage = fromVendorResponse(vendorResponse);
+
+        // 7. Append the response to generic history
+        messages.add(responseMessage);
+
+        return responseMessage;
+    }
+
+    // --------- Abstract Methods for Subclasses ---------
+
+    /**
+     * Converts our generic Message to the vendor-specific message format.
+     * Subclasses implement this to handle vendor-specific message structure.
+     *
+     * @param message our generic message
+     * @return the vendor-specific message object
+     */
+    protected abstract V toVendorMessage(Message message);
+
+    /**
+     * Sends the vendor-specific message to the vendor API and returns the response.
+     * This is where the actual API call happens.
+     *
+     * @param vendorMessage the vendor-specific message to send
+     * @return the vendor-specific response
+     */
+    protected abstract R sendMessageToVendor(V vendorMessage);
+
+    /**
+     * Converts a vendor-specific response to a vendor-specific message format
+     * for storage in the vendorMessages history.
+     *
+     * @param vendorResponse the vendor-specific response
+     * @return the vendor-specific message representation of the response
+     */
+    protected abstract V vendorResponseToVendorMessage(R vendorResponse);
+
+    /**
+     * Converts a vendor-specific response back to our generic Message format.
+     *
+     * @param vendorResponse the vendor-specific response
+     * @return our generic message
+     */
+    protected abstract Message fromVendorResponse(R vendorResponse);
+
     // --------- Messages ---------
 
     public List<Message> messages() {
@@ -153,6 +274,16 @@ public final class Conversation {
 
     public void clearMessages() {
         messages.clear();
+        vendorMessages.clear();
+    }
+
+    // --------- Vendor Messages ---------
+
+    /**
+     * Returns an unmodifiable view of the vendor-specific message history.
+     */
+    public List<V> vendorMessages() {
+        return Collections.unmodifiableList(vendorMessages);
     }
 
     // --------- Helpers ---------
