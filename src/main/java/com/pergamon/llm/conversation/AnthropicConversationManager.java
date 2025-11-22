@@ -117,28 +117,9 @@ public class AnthropicConversationManager
                     .build();
 
             // Make the synchronous (non-streaming) API call
-            com.anthropic.models.messages.Message response = client.messages().create(createParams);
-
-            // Debug: Print the raw response
-            System.out.println("=== Raw Anthropic Response ===");
-            System.out.println("ID: " + response.id());
-            System.out.println("Model: " + response.model());
-            System.out.println("Stop Reason: " + response.stopReason());
-            System.out.println("Usage: " + response.usage());
-            System.out.println("Content blocks: " + response.content().size());
-            System.out.println();
-
-            response.content().forEach(block -> {
-                System.out.println("Content Block:");
-                System.out.println("  toString: " + block);
-                block.text().ifPresent(text -> System.out.println("  Text: " + text.text()));
-            });
-            System.out.println();
-
-            return response;
+            return client.messages().create(createParams);
 
         } catch (Exception e) {
-            e.printStackTrace();
             throw new RuntimeException("Failed to send message to Anthropic", e);
         }
     }

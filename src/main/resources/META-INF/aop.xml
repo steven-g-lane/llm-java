@@ -1,0 +1,13 @@
+<!DOCTYPE aspectj PUBLIC "-//AspectJ//DTD//EN" "https://www.eclipse.org/aspectj/dtd/aspectj.dtd">
+<aspectj>
+    <weaver options="-verbose -showWeaveInfo">
+        <!-- Weave classes in our package -->
+        <include within="com.pergamon.llm..*"/>
+    </weaver>
+
+    <aspects>
+        <!-- Register our logging aspects -->
+        <aspect name="com.pergamon.llm.aspect.ApiLoggingAspect"/>
+        <aspect name="com.pergamon.llm.aspect.ExceptionLoggingAspect"/>
+    </aspects>
+</aspectj>
