@@ -1,5 +1,7 @@
 package com.pergamon.llm.conversation;
 
+import com.pergamon.llm.config.ApiConfig;
+
 /**
  * Abstract base class for managing conversations with different LLM vendors.
  *
@@ -78,29 +80,30 @@ public abstract class ConversationManager<V, R> {
      * Factory method to create a ConversationManager for a specific model.
      *
      * @param modelId the model to create a manager for
+     * @param config the API configuration containing vendor API keys
      * @return a ConversationManager instance for the model's vendor
      * @throws IllegalArgumentException if the vendor is not supported
      */
-    public static ConversationManager<?, ?> forModel(ModelId modelId) {
+    public static ConversationManager<?, ?> forModel(ModelId modelId, ApiConfig config) {
         return switch (modelId.vendor()) {
-            case ANTHROPIC -> createAnthropicManager();
-            case OPENAI -> createOpenAIManager();
-            case GOOGLE -> createGoogleManager();
+            case ANTHROPIC -> createAnthropicManager(config);
+            case OPENAI -> createOpenAIManager(config);
+            case GOOGLE -> createGoogleManager(config);
         };
     }
 
-    private static ConversationManager<?, ?> createAnthropicManager() {
-        // TODO: Load API key from environment/config
-        throw new UnsupportedOperationException("Anthropic manager not yet implemented");
+    private static ConversationManager<?, ?> createAnthropicManager(ApiConfig config) {
+        String apiKey = config.getApiKeyOrThrow(Vendor.ANTHROPIC);
+        return new AnthropicConversationManager(apiKey);
     }
 
-    private static ConversationManager<?, ?> createOpenAIManager() {
-        // TODO: Load API key from environment/config
+    private static ConversationManager<?, ?> createOpenAIManager(ApiConfig config) {
+        // TODO: Implement OpenAI manager
         throw new UnsupportedOperationException("OpenAI manager not yet implemented");
     }
 
-    private static ConversationManager<?, ?> createGoogleManager() {
-        // TODO: Load API key from environment/config
+    private static ConversationManager<?, ?> createGoogleManager(ApiConfig config) {
+        // TODO: Implement Google manager
         throw new UnsupportedOperationException("Google manager not yet implemented");
     }
 }
