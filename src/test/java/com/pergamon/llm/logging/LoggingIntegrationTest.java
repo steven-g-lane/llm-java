@@ -1,11 +1,15 @@
 package com.pergamon.llm.logging;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.pergamon.llm.config.ApiConfig;
 import com.pergamon.llm.config.FileApiConfig;
 import com.pergamon.llm.conversation.*;
-import com.pergamon.llm.util.LogTestHelper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
@@ -14,13 +18,43 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Integration test for logging functionality.
  * Tests that API calls and exceptions are properly logged via AOP aspects.
+ * Uses in-memory ListAppender to avoid file handle conflicts between tests.
  */
 public class LoggingIntegrationTest {
 
+    private ListAppender<ILoggingEvent> apiListAppender;
+    private ListAppender<ILoggingEvent> errorListAppender;
+    private Logger apiLogger;
+    private Logger rootLogger;
+
     @BeforeEach
-    public void setup() throws Exception {
-        // Clear logs before each test to ensure clean state
-        LogTestHelper.clearLogs();
+    public void setup() {
+        // Get the API logger that the aspect uses
+        apiLogger = (Logger) LoggerFactory.getLogger("com.pergamon.llm.api");
+
+        // Create and start the in-memory appender for API logs
+        apiListAppender = new ListAppender<>();
+        apiListAppender.start();
+        apiLogger.addAppender(apiListAppender);
+
+        // Get the root logger for error logging
+        rootLogger = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+
+        // Create and start the in-memory appender for error logs
+        errorListAppender = new ListAppender<>();
+        errorListAppender.start();
+        rootLogger.addAppender(errorListAppender);
+    }
+
+    @AfterEach
+    public void tearDown() {
+        // Detach the appenders after each test
+        if (apiLogger != null && apiListAppender != null) {
+            apiLogger.detachAppender(apiListAppender);
+        }
+        if (rootLogger != null && errorListAppender != null) {
+            rootLogger.detachAppender(errorListAppender);
+        }
     }
 
     @Test
@@ -41,11 +75,7 @@ public class LoggingIntegrationTest {
             List.of(new TextBlock(TextBlockFormat.PLAIN, "Say hello in one word."))
         );
 
-        // Get initial log entry count
-        long initialApiLogCount = LogTestHelper.getApiLogEntryCount();
-
         System.out.println("=== Testing API Logging ===");
-        System.out.println("Initial API log entries: " + initialApiLogCount);
 
         // Send the message - this should trigger API logging via the aspect
         Message response = conversation.sendMessage(userMessage);
@@ -54,39 +84,30 @@ public class LoggingIntegrationTest {
         assertNotNull(response, "Response should not be null");
         assertEquals(MessageRole.ASSISTANT, response.role(), "Response role should be ASSISTANT");
 
-        // Small delay to ensure logs are flushed
-        Thread.sleep(500);
+        // Verify API logging occurred by checking the in-memory appender
+        List<ILoggingEvent> logEvents = apiListAppender.list;
 
-        // Verify API logging occurred
-        System.out.println("\n=== Verifying API Logs ===");
+        // Check that we have at least 2 log events (request + response)
+        assertTrue(logEvents.size() >= 2,
+            "Should have at least 2 log events (request + response), but found " + logEvents.size());
 
-        // Check that API log now contains ANTHROPIC entries
-        assertTrue(LogTestHelper.apiLogContainsRequest("ANTHROPIC"),
-            "API log should contain ANTHROPIC request");
-        assertTrue(LogTestHelper.apiLogContainsResponse("ANTHROPIC"),
-            "API log should contain ANTHROPIC response");
+        // Check that API log contains ANTHROPIC request
+        boolean hasRequest = logEvents.stream()
+            .anyMatch(event -> event.getFormattedMessage().contains("[ANTHROPIC] Request:"));
+        assertTrue(hasRequest, "API log should contain ANTHROPIC request");
 
-        // Verify log entry count increased
-        long finalApiLogCount = LogTestHelper.getApiLogEntryCount();
-        System.out.println("Final API log entries: " + finalApiLogCount);
-        assertTrue(finalApiLogCount > initialApiLogCount,
-            "API log should have new entries (initial: " + initialApiLogCount + ", final: " + finalApiLogCount + ")");
+        // Check that API log contains ANTHROPIC response
+        boolean hasResponse = logEvents.stream()
+            .anyMatch(event -> event.getFormattedMessage().contains("[ANTHROPIC] Response:"));
+        assertTrue(hasResponse, "API log should contain ANTHROPIC response");
 
-        // Display recent log entries for debugging
-        System.out.println("\n=== Recent API Log Entries ===");
-        List<String> recentEntries = LogTestHelper.getRecentApiLogEntries(5);
-        recentEntries.forEach(System.out::println);
-
-        System.out.println("\n=== API Logging Test Passed! ===");
+        System.out.println("API log events captured: " + logEvents.size());
+        System.out.println("=== API Logging Test Passed! ===");
     }
 
     @Test
     public void testExceptionsAreLogged() throws Exception {
         System.out.println("=== Testing Exception Logging ===");
-
-        // Get initial error log count
-        long initialErrorLogCount = LogTestHelper.getErrorLogEntryCount();
-        System.out.println("Initial error log entries: " + initialErrorLogCount);
 
         // Create a conversation with an invalid API key to trigger an error
         ModelId modelId = new ModelId(Vendor.ANTHROPIC, "claude-sonnet-4-20250514");
@@ -102,37 +123,28 @@ public class LoggingIntegrationTest {
         );
 
         // Attempt to send the message - this should fail and trigger exception logging
-        System.out.println("\nAttempting to send message with invalid API key...");
+        System.out.println("Attempting to send message with invalid API key...");
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
             conversation.sendMessage(userMessage);
         });
 
         System.out.println("Exception caught: " + exception.getClass().getSimpleName());
-        System.out.println("Exception message: " + exception.getMessage());
 
-        // Small delay to ensure logs are flushed
-        Thread.sleep(500);
+        // Verify exception logging occurred by checking the in-memory appender
+        List<ILoggingEvent> errorEvents = errorListAppender.list;
 
-        // Verify exception logging occurred
-        System.out.println("\n=== Verifying Error Logs ===");
-
-        // Check that error log contains the exception
-        long finalErrorLogCount = LogTestHelper.getErrorLogEntryCount();
-        System.out.println("Final error log entries: " + finalErrorLogCount);
-
-        assertTrue(finalErrorLogCount > initialErrorLogCount,
-            "Error log should have new entries (initial: " + initialErrorLogCount + ", final: " + finalErrorLogCount + ")");
+        // Check that we have at least one error log entry
+        assertTrue(errorEvents.size() > 0,
+            "Error log should have at least one entry, but found " + errorEvents.size());
 
         // Verify the exception was logged from the correct method
-        assertTrue(LogTestHelper.errorLogContainsMethodError("AnthropicConversation", "sendMessageToVendor"),
+        boolean hasMethodError = errorEvents.stream()
+            .anyMatch(event -> event.getFormattedMessage().contains("AnthropicConversation.sendMessageToVendor()"));
+        assertTrue(hasMethodError,
             "Error log should contain exception from AnthropicConversation.sendMessageToVendor()");
 
-        // Display the error log
-        System.out.println("\n=== Error Log Contents ===");
-        List<String> errorLog = LogTestHelper.readErrorLog();
-        errorLog.forEach(System.out::println);
-
-        System.out.println("\n=== Exception Logging Test Passed! ===");
+        System.out.println("Error log events captured: " + errorEvents.size());
+        System.out.println("=== Exception Logging Test Passed! ===");
     }
 
     @Test
@@ -147,13 +159,10 @@ public class LoggingIntegrationTest {
         Conversation<?, ?> conversation = Conversation.forModel(modelId, config);
         conversation.rename("Multi-call Test");
 
-        // Get initial log count
-        long initialApiLogCount = LogTestHelper.getApiLogEntryCount();
-
         // Send multiple messages
         int messageCount = 3;
         for (int i = 1; i <= messageCount; i++) {
-            System.out.println("\nSending message " + i + " of " + messageCount);
+            System.out.println("Sending message " + i + " of " + messageCount);
             Message userMessage = new Message(
                 MessageRole.USER,
                 List.of(new TextBlock(TextBlockFormat.PLAIN, "Count to " + i))
@@ -161,23 +170,31 @@ public class LoggingIntegrationTest {
             conversation.sendMessage(userMessage);
         }
 
-        // Small delay to ensure logs are flushed
-        Thread.sleep(500);
-
         // Verify that multiple API calls were logged
-        long finalApiLogCount = LogTestHelper.getApiLogEntryCount();
-        long newEntries = finalApiLogCount - initialApiLogCount;
+        List<ILoggingEvent> logEvents = apiListAppender.list;
 
         System.out.println("\n=== API Log Summary ===");
-        System.out.println("Initial entries: " + initialApiLogCount);
-        System.out.println("Final entries: " + finalApiLogCount);
-        System.out.println("New entries: " + newEntries);
+        System.out.println("Total log events: " + logEvents.size());
 
         // Each API call should generate 2 log entries (request + response)
-        long expectedMinEntries = messageCount * 2;
-        assertTrue(newEntries >= expectedMinEntries,
-            "Should have at least " + expectedMinEntries + " new log entries (request + response for each call), but found " + newEntries);
+        int expectedMinEntries = messageCount * 2;
+        assertTrue(logEvents.size() >= expectedMinEntries,
+            "Should have at least " + expectedMinEntries + " log events (request + response for each call), but found " + logEvents.size());
 
-        System.out.println("\n=== Multiple API Calls Logging Test Passed! ===");
+        // Count requests and responses
+        long requestCount = logEvents.stream()
+            .filter(event -> event.getFormattedMessage().contains("[ANTHROPIC] Request:"))
+            .count();
+        long responseCount = logEvents.stream()
+            .filter(event -> event.getFormattedMessage().contains("[ANTHROPIC] Response:"))
+            .count();
+
+        System.out.println("Request events: " + requestCount);
+        System.out.println("Response events: " + responseCount);
+
+        assertEquals(messageCount, requestCount, "Should have " + messageCount + " request log entries");
+        assertEquals(messageCount, responseCount, "Should have " + messageCount + " response log entries");
+
+        System.out.println("=== Multiple API Calls Logging Test Passed! ===");
     }
 }
