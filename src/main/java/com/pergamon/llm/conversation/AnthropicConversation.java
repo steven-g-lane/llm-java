@@ -18,6 +18,9 @@ import java.util.List;
  * This class handles the conversion between our generic Message format and
  * Anthropic's SDK message format, and manages communication with the Anthropic API.
  *
+ * Each API call sends the full conversation history (all messages from vendorMessages),
+ * enabling Claude to maintain context across multiple turns in the conversation.
+ *
  * Type parameters:
  * - V: MessageParam (the vendor-specific message type)
  * - R: com.anthropic.models.messages.Message (the response type, disambiguated from our Message class)
@@ -122,7 +125,7 @@ public class AnthropicConversation
     }
 
     @Override
-    protected com.anthropic.models.messages.Message sendMessageToVendor(MessageParam vendorMessage) {
+    protected com.anthropic.models.messages.Message sendConversationToVendor() {
         try {
             // Get model ID
             String model = modelId().apiModelName();
@@ -132,16 +135,16 @@ public class AnthropicConversation
                     .model(model)
                     .maxTokens(MAX_TOKENS);
 
-            // Add all vendor messages (the history)
+            // Add all vendor messages (the entire conversation history)
             for (MessageParam msg : vendorMessages) {
                 paramsBuilder.addMessage(msg);
             }
 
-            // Make the synchronous (non-streaming) API call
+            // Make the synchronous (non-streaming) API call with full conversation context
             return client.messages().create(paramsBuilder.build());
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to send message to Anthropic", e);
+            throw new RuntimeException("Failed to send conversation to Anthropic", e);
         }
     }
 

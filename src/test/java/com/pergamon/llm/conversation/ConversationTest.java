@@ -27,7 +27,7 @@ class ConversationTest {
         }
 
         @Override
-        protected String sendMessageToVendor(String vendorMessage) {
+        protected String sendConversationToVendor() {
             return "vendor-response";
         }
 

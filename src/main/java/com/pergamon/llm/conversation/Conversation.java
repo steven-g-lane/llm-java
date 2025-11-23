@@ -15,13 +15,16 @@ import java.util.Optional;
  * This class merges conversation state and conversation management, implementing
  * the Template Method pattern to handle the common flow of:
  * 1. Converting our Message to vendor-specific format
- * 2. Sending to the vendor API
+ * 2. Sending the entire conversation history to the vendor API
  * 3. Converting the vendor response back to our Message format
  * 4. Automatically appending messages to both generic and vendor-specific histories
  *
  * Maintains two parallel conversation histories:
  * - messages: Generic Message objects (vendor-agnostic)
  * - vendorMessages: Vendor-specific message objects (e.g., Anthropic's MessageParam)
+ *
+ * Each API call sends the full conversation context, enabling multi-turn conversational
+ * interactions where the model can reference previous messages in the conversation.
  *
  * @param <V> The vendor-specific message type (e.g., MessageParam for Anthropic)
  * @param <R> The vendor-specific response type (e.g., com.anthropic.models.messages.Message)
@@ -188,7 +191,7 @@ public abstract class Conversation<V, R> {
      * 1. Appends the user message to messages
      * 2. Converts to vendor-specific format
      * 3. Appends the vendor message to vendorMessages
-     * 4. Calls the vendor API
+     * 4. Calls the vendor API with the entire conversation history
      * 5. Appends the vendor response to vendorMessages
      * 6. Converts response back to our Message format
      * 7. Appends the response message to messages
@@ -206,8 +209,8 @@ public abstract class Conversation<V, R> {
         // 3. Append the vendor message to vendor-specific history
         vendorMessages.add(vendorMessage);
 
-        // 4. Call vendor-specific send implementation
-        R vendorResponse = sendMessageToVendor(vendorMessage);
+        // 4. Send the entire conversation to the vendor API
+        R vendorResponse = sendConversationToVendor();
 
         // 5. Convert vendor response to vendor message format and append
         V vendorResponseMessage = vendorResponseToVendorMessage(vendorResponse);
@@ -234,13 +237,15 @@ public abstract class Conversation<V, R> {
     protected abstract V toVendorMessage(Message message);
 
     /**
-     * Sends the vendor-specific message to the vendor API and returns the response.
+     * Sends the entire conversation history to the vendor API and returns the response.
      * This is where the actual API call happens.
      *
-     * @param vendorMessage the vendor-specific message to send
+     * Subclasses should use the vendorMessages list to include the full conversation context
+     * in the API request, enabling multi-turn conversational interactions.
+     *
      * @return the vendor-specific response
      */
-    protected abstract R sendMessageToVendor(V vendorMessage);
+    protected abstract R sendConversationToVendor();
 
     /**
      * Converts a vendor-specific response to a vendor-specific message format
