@@ -1,8 +1,9 @@
 package com.pergamon.llm.conversation;
 
+import com.pergamon.llm.config.ApiConfig;
+import com.pergamon.llm.config.FileApiConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.net.URI;
 import java.util.List;
@@ -11,19 +12,22 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for image handling in AnthropicConversation.
- * These tests require an ANTHROPIC_API_KEY environment variable.
+ * These tests require a valid API key in src/main/resources/api-keys.properties.
  *
  * Note: These tests use fragile external resources (local file and Wikipedia URL)
  * and are intended for manual verification during development.
  */
-@EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
 class AnthropicConversationImageTest {
 
     private AnthropicConversation conversation;
 
     @BeforeEach
-    void setUp() {
-        String apiKey = System.getenv("ANTHROPIC_API_KEY");
+    void setUp() throws Exception {
+        // Load API configuration from properties file
+        ApiConfig config = FileApiConfig.fromResource("/api-keys.properties");
+        String apiKey = config.getApiKey(Vendor.ANTHROPIC)
+                .orElseThrow(() -> new IllegalStateException("Anthropic API key not found in api-keys.properties"));
+
         conversation = new AnthropicConversation(
                 new ModelId(Vendor.ANTHROPIC, "claude-sonnet-4-20250514"),
                 "Image Test Conversation",
@@ -33,8 +37,8 @@ class AnthropicConversationImageTest {
 
     @Test
     void testSendMessageWithUrlImage() {
-        // Create a message with a URL image from Wikipedia
-        URI imageUri = URI.create("https://en.wikipedia.org/wiki/Andrei_Gromyko#/media/File:Andrei_Gromyko_1972_(cropped)(b)(2).jpg");
+        // Create a message with a URL image from Wikipedia Commons
+        URI imageUri = URI.create("https://upload.wikimedia.org/wikipedia/commons/4/49/Andrei_Gromyko_1972_%28cropped%29%28b%29%282%29.jpg");
         URLImageBlock urlImage = new URLImageBlock(imageUri, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
@@ -117,7 +121,7 @@ class AnthropicConversationImageTest {
         String localImagePath = "/Users/slane/Desktop/vilna.jpg";
         FilePathImageBlock filePathImage = new FilePathImageBlock(localImagePath, "image/jpeg");
 
-        URI imageUri = URI.create("https://en.wikipedia.org/wiki/Andrei_Gromyko#/media/File:Andrei_Gromyko_1972_(cropped)(b)(2).jpg");
+        URI imageUri = URI.create("https://upload.wikimedia.org/wikipedia/commons/4/49/Andrei_Gromyko_1972_%28cropped%29%28b%29%282%29.jpg");
         URLImageBlock urlImage = new URLImageBlock(imageUri, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
