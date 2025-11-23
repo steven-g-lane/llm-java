@@ -6,8 +6,13 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collection;
+
 /**
- * Utility methods for conversation processing, including text format detection.
+ * Utility methods for conversation processing, including text format detection and validation.
  */
 public class ConversationUtils {
 
@@ -146,5 +151,99 @@ public class ConversationUtils {
 
         // If no HTML tag pattern found, it's not HTML (e.g., "2 < 3" contains < but no tags)
         return false;
+    }
+
+    // ==================== Validation Methods ====================
+
+    /**
+     * Validates that a file path points to an existing readable file with a supported extension.
+     *
+     * @param filePath the file path to validate
+     * @param supportedExtensions collection of supported file extensions (e.g., ".png", ".jpg")
+     * @throws IllegalArgumentException if the file doesn't exist, is not readable, or has an unsupported extension
+     */
+    public static void validateFilePath(String filePath, Collection<String> supportedExtensions) {
+        if (filePath == null || filePath.isBlank()) {
+            throw new IllegalArgumentException("File path cannot be null or blank");
+        }
+
+        Path path = Path.of(filePath);
+
+        if (!Files.exists(path)) {
+            throw new IllegalArgumentException("File does not exist: " + filePath);
+        }
+
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("Path is not a regular file: " + filePath);
+        }
+
+        if (!Files.isReadable(path)) {
+            throw new IllegalArgumentException("File is not readable: " + filePath);
+        }
+
+        String fileName = path.getFileName().toString().toLowerCase();
+        boolean hasSupportedExtension = supportedExtensions.stream()
+                .anyMatch(ext -> fileName.endsWith(ext.toLowerCase()));
+
+        if (!hasSupportedExtension) {
+            throw new IllegalArgumentException(
+                    "File does not have a supported extension " + supportedExtensions + ": " + filePath
+            );
+        }
+    }
+
+    /**
+     * Validates that a URI is well-formed and uses http/https scheme.
+     *
+     * @param uri the URI to validate
+     * @throws IllegalArgumentException if the URI is not well-formed
+     */
+    public static void validateUri(URI uri) {
+        if (uri == null) {
+            throw new IllegalArgumentException("URI cannot be null");
+        }
+
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+            throw new IllegalArgumentException("URI must use http or https scheme: " + uri);
+        }
+
+        if (uri.getHost() == null || uri.getHost().isBlank()) {
+            throw new IllegalArgumentException("URI must have a valid host: " + uri);
+        }
+    }
+
+    /**
+     * Validates that a MIME type is in the collection of supported types.
+     *
+     * @param mimeType the MIME type to validate
+     * @param supportedMimeTypes collection of supported MIME types (e.g., "image/png", "image/jpeg")
+     * @throws IllegalArgumentException if the MIME type is not supported
+     */
+    public static void validateMimeType(String mimeType, Collection<String> supportedMimeTypes) {
+        if (mimeType == null || mimeType.isBlank()) {
+            throw new IllegalArgumentException("MIME type cannot be null or blank");
+        }
+
+        boolean isSupported = supportedMimeTypes.stream()
+                .anyMatch(supported -> supported.equalsIgnoreCase(mimeType));
+
+        if (!isSupported) {
+            throw new IllegalArgumentException(
+                    "Unsupported MIME type: " + mimeType + ". Supported types: " + supportedMimeTypes
+            );
+        }
+    }
+
+    /**
+     * Validates that base64-encoded data is not null or blank.
+     *
+     * @param base64Data the base64 data to validate
+     * @throws IllegalArgumentException if the data is null or blank
+     */
+    public static void validateBase64Data(String base64Data) {
+        if (base64Data == null || base64Data.isBlank()) {
+            throw new IllegalArgumentException("Base64 data cannot be null or blank");
+        }
     }
 }

@@ -2,15 +2,23 @@ package com.pergamon.llm.conversation;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
+import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.UrlImageSource;
 // Note: TextBlock from Anthropic SDK accessed via fully qualified name to avoid conflict with our TextBlock
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Conversation implementation for Anthropic's Claude models.
@@ -29,6 +37,14 @@ public class AnthropicConversation
         extends Conversation<MessageParam, com.anthropic.models.messages.Message> {
 
     private static final int MAX_TOKENS = 4096;
+
+    private static final Set<String> SUPPORTED_IMAGE_EXTENSIONS = Set.of(
+            ".png", ".jpg", ".jpeg", ".gif", ".webp"
+    );
+
+    private static final Set<String> SUPPORTED_MIME_TYPES = Set.of(
+            "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"
+    );
 
     private final String apiKey;
     private final AnthropicClient client;
@@ -97,13 +113,12 @@ public class AnthropicConversation
      *
      * @param block our message block
      * @return Anthropic ContentBlockParam
-     * @throws UnsupportedOperationException for non-TextBlock types
+     * @throws UnsupportedOperationException for UnknownBlock
      */
     protected ContentBlockParam toVendorMessageBlock(MessageBlock block) {
         return switch (block) {
             case TextBlock textBlock -> toVendorTextBlock(textBlock);
-            case ImageBlock imageBlock -> throw new UnsupportedOperationException(
-                    "ImageBlock conversion not yet implemented");
+            case ImageBlock imageBlock -> toVendorImageBlock(imageBlock);
             case UnknownBlock unknownBlock -> throw new UnsupportedOperationException(
                     "UnknownBlock cannot be converted");
             default -> throw new UnsupportedOperationException(
@@ -122,6 +137,101 @@ public class AnthropicConversation
                 .text(textBlock.text())
                 .build();
         return ContentBlockParam.ofText(textBlockParam);
+    }
+
+    /**
+     * Converts our ImageBlock to Anthropic's ContentBlockParam.
+     * Handles URL, Base64, and file path image sources.
+     *
+     * @param imageBlock our image block
+     * @return Anthropic ContentBlockParam wrapping an ImageBlockParam
+     */
+    protected ContentBlockParam toVendorImageBlock(ImageBlock imageBlock) {
+        return switch (imageBlock) {
+            case URLImageBlock urlImageBlock -> toVendorUrlImageBlock(urlImageBlock);
+            case Base64ImageBlock base64ImageBlock -> toVendorBase64ImageBlock(base64ImageBlock);
+            case FilePathImageBlock filePathImageBlock -> toVendorFilePathImageBlock(filePathImageBlock);
+            default -> throw new UnsupportedOperationException(
+                    "Unsupported image block type: " + imageBlock.getClass().getName());
+        };
+    }
+
+    /**
+     * Converts URLImageBlock to Anthropic's ImageBlockParam with UrlImageSource.
+     *
+     * @param urlImageBlock our URL image block
+     * @return Anthropic ContentBlockParam wrapping an ImageBlockParam
+     */
+    protected ContentBlockParam toVendorUrlImageBlock(URLImageBlock urlImageBlock) {
+        ConversationUtils.validateUri(urlImageBlock.uri());
+        ConversationUtils.validateMimeType(urlImageBlock.mimeType(), SUPPORTED_MIME_TYPES);
+
+        UrlImageSource urlSource = UrlImageSource.builder()
+                .url(urlImageBlock.uri().toString())
+                .build();
+
+        ImageBlockParam imageBlockParam = ImageBlockParam.builder()
+                .source(urlSource)
+                .build();
+
+        return ContentBlockParam.ofImage(imageBlockParam);
+    }
+
+    /**
+     * Converts Base64ImageBlock to Anthropic's ImageBlockParam with Base64ImageSource.
+     *
+     * @param base64ImageBlock our base64 image block
+     * @return Anthropic ContentBlockParam wrapping an ImageBlockParam
+     */
+    protected ContentBlockParam toVendorBase64ImageBlock(Base64ImageBlock base64ImageBlock) {
+        ConversationUtils.validateBase64Data(base64ImageBlock.base64Data());
+        ConversationUtils.validateMimeType(base64ImageBlock.mimeType(), SUPPORTED_MIME_TYPES);
+
+        Base64ImageSource.MediaType mediaType = mapToAnthropicMediaType(base64ImageBlock.mimeType());
+
+        Base64ImageSource base64Source = Base64ImageSource.builder()
+                .data(base64ImageBlock.base64Data())
+                .mediaType(mediaType)
+                .build();
+
+        ImageBlockParam imageBlockParam = ImageBlockParam.builder()
+                .source(base64Source)
+                .build();
+
+        return ContentBlockParam.ofImage(imageBlockParam);
+    }
+
+    /**
+     * Converts FilePathImageBlock to Anthropic's ImageBlockParam with Base64ImageSource.
+     * Reads the file, encodes it to base64, and creates a Base64ImageSource.
+     *
+     * @param filePathImageBlock our file path image block
+     * @return Anthropic ContentBlockParam wrapping an ImageBlockParam
+     */
+    protected ContentBlockParam toVendorFilePathImageBlock(FilePathImageBlock filePathImageBlock) {
+        ConversationUtils.validateFilePath(filePathImageBlock.filePath(), SUPPORTED_IMAGE_EXTENSIONS);
+        ConversationUtils.validateMimeType(filePathImageBlock.mimeType(), SUPPORTED_MIME_TYPES);
+
+        try {
+            Path path = Path.of(filePathImageBlock.filePath());
+            byte[] fileBytes = Files.readAllBytes(path);
+            String base64Data = Base64.getEncoder().encodeToString(fileBytes);
+
+            Base64ImageSource.MediaType mediaType = mapToAnthropicMediaType(filePathImageBlock.mimeType());
+
+            Base64ImageSource base64Source = Base64ImageSource.builder()
+                    .data(base64Data)
+                    .mediaType(mediaType)
+                    .build();
+
+            ImageBlockParam imageBlockParam = ImageBlockParam.builder()
+                    .source(base64Source)
+                    .build();
+
+            return ContentBlockParam.ofImage(imageBlockParam);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read image file: " + filePathImageBlock.filePath(), e);
+        }
     }
 
     @Override
@@ -239,5 +349,23 @@ public class AnthropicConversation
         String text = anthropicTextBlock.text();
         TextBlockFormat format = ConversationUtils.detectTextFormat(text);
         return new TextBlock(format, text);
+    }
+
+    /**
+     * Maps our MIME type strings to Anthropic's MediaType enum.
+     * This is Anthropic-specific and stays in this class.
+     *
+     * @param mimeType the MIME type string
+     * @return the corresponding Anthropic MediaType
+     * @throws IllegalArgumentException if the MIME type is not supported
+     */
+    private static Base64ImageSource.MediaType mapToAnthropicMediaType(String mimeType) {
+        return switch (mimeType.toLowerCase()) {
+            case "image/png" -> Base64ImageSource.MediaType.IMAGE_PNG;
+            case "image/jpeg", "image/jpg" -> Base64ImageSource.MediaType.IMAGE_JPEG;
+            case "image/gif" -> Base64ImageSource.MediaType.IMAGE_GIF;
+            case "image/webp" -> Base64ImageSource.MediaType.IMAGE_WEBP;
+            default -> throw new IllegalArgumentException("Unsupported MIME type: " + mimeType);
+        };
     }
 }

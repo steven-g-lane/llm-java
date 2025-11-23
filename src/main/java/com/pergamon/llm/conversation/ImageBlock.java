@@ -2,10 +2,10 @@ package com.pergamon.llm.conversation;
 
 /**
  * Sealed interface representing an image in a message.
- * Images can be provided either as a URL or as base64-encoded data.
+ * Images can be provided as a URL, base64-encoded data, or a file path.
  */
 public sealed interface ImageBlock extends MessageBlock
-    permits URLImageBlock, Base64ImageBlock {
+    permits URLImageBlock, Base64ImageBlock, FilePathImageBlock {
 
     /**
      * Returns the MIME type of the image (e.g., "image/png", "image/jpeg").
