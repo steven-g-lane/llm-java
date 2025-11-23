@@ -10,6 +10,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Set;
 
 /**
  * Utility methods for conversation processing, including text format detection and validation.
@@ -245,5 +246,37 @@ public class ConversationUtils {
         if (base64Data == null || base64Data.isBlank()) {
             throw new IllegalArgumentException("Base64 data cannot be null or blank");
         }
+    }
+
+    /**
+     * Validates that a PDF file path points to an existing readable file with .pdf extension.
+     *
+     * @param filePath the file path to validate
+     * @throws IllegalArgumentException if the file doesn't exist, is not readable, or doesn't have .pdf extension
+     */
+    public static void validatePdfFilePath(String filePath) {
+        validateFilePath(filePath, Set.of(".pdf"));
+    }
+
+    /**
+     * Validates that plain text content is not null or blank.
+     *
+     * @param text the text to validate
+     * @throws IllegalArgumentException if the text is null or blank
+     */
+    public static void validatePlainText(String text) {
+        if (text == null || text.isBlank()) {
+            throw new IllegalArgumentException("Plain text cannot be null or blank");
+        }
+    }
+
+    /**
+     * Validates that a document MIME type is supported (application/pdf or text/plain).
+     *
+     * @param mimeType the MIME type to validate
+     * @throws IllegalArgumentException if the MIME type is not supported
+     */
+    public static void validateDocumentMimeType(String mimeType) {
+        validateMimeType(mimeType, Set.of("application/pdf", "text/plain"));
     }
 }

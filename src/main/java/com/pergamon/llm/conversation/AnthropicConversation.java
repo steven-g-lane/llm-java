@@ -5,6 +5,7 @@ import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
+import com.anthropic.models.messages.DocumentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
@@ -44,6 +45,12 @@ public class AnthropicConversation
 
     private static final Set<String> SUPPORTED_MIME_TYPES = Set.of(
             "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"
+    );
+
+    private static final Set<String> SUPPORTED_DOCUMENT_EXTENSIONS = Set.of(".pdf");
+
+    private static final Set<String> SUPPORTED_DOCUMENT_MIME_TYPES = Set.of(
+            "application/pdf", "text/plain"
     );
 
     private final String apiKey;
@@ -119,6 +126,7 @@ public class AnthropicConversation
         return switch (block) {
             case TextBlock textBlock -> toVendorTextBlock(textBlock);
             case ImageBlock imageBlock -> toVendorImageBlock(imageBlock);
+            case DocumentBlock documentBlock -> toVendorDocumentBlock(documentBlock);
             case UnknownBlock unknownBlock -> throw new UnsupportedOperationException(
                     "UnknownBlock cannot be converted");
             default -> throw new UnsupportedOperationException(
@@ -232,6 +240,101 @@ public class AnthropicConversation
         } catch (IOException e) {
             throw new RuntimeException("Failed to read image file: " + filePathImageBlock.filePath(), e);
         }
+    }
+
+    /**
+     * Converts our DocumentBlock to Anthropic's ContentBlockParam.
+     * Handles PDF (URL, Base64, file path) and plain text document sources.
+     *
+     * @param documentBlock our document block
+     * @return Anthropic ContentBlockParam wrapping a DocumentBlockParam
+     */
+    protected ContentBlockParam toVendorDocumentBlock(DocumentBlock documentBlock) {
+        return switch (documentBlock) {
+            case URLPDFDocumentBlock urlPdfDocumentBlock -> toVendorUrlPdfDocumentBlock(urlPdfDocumentBlock);
+            case Base64PDFDocumentBlock base64PdfDocumentBlock -> toVendorBase64PdfDocumentBlock(base64PdfDocumentBlock);
+            case FilePathPDFDocumentBlock filePathPdfDocumentBlock -> toVendorFilePathPdfDocumentBlock(filePathPdfDocumentBlock);
+            case PlainTextDocumentBlock plainTextDocumentBlock -> toVendorPlainTextDocumentBlock(plainTextDocumentBlock);
+            default -> throw new UnsupportedOperationException(
+                    "Unsupported document block type: " + documentBlock.getClass().getName());
+        };
+    }
+
+    /**
+     * Converts URLPDFDocumentBlock to Anthropic's DocumentBlockParam with URL source.
+     *
+     * @param urlPdfDocumentBlock our URL PDF document block
+     * @return Anthropic ContentBlockParam wrapping a DocumentBlockParam
+     */
+    protected ContentBlockParam toVendorUrlPdfDocumentBlock(URLPDFDocumentBlock urlPdfDocumentBlock) {
+        ConversationUtils.validateUri(urlPdfDocumentBlock.uri());
+        ConversationUtils.validateMimeType(urlPdfDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
+
+        DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
+                .urlSource(urlPdfDocumentBlock.uri().toString())
+                .build();
+
+        return ContentBlockParam.ofDocument(documentBlockParam);
+    }
+
+    /**
+     * Converts Base64PDFDocumentBlock to Anthropic's DocumentBlockParam with base64 source.
+     *
+     * @param base64PdfDocumentBlock our base64 PDF document block
+     * @return Anthropic ContentBlockParam wrapping a DocumentBlockParam
+     */
+    protected ContentBlockParam toVendorBase64PdfDocumentBlock(Base64PDFDocumentBlock base64PdfDocumentBlock) {
+        ConversationUtils.validateBase64Data(base64PdfDocumentBlock.base64Data());
+        ConversationUtils.validateMimeType(base64PdfDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
+
+        DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
+                .base64Source(base64PdfDocumentBlock.base64Data())
+                .build();
+
+        return ContentBlockParam.ofDocument(documentBlockParam);
+    }
+
+    /**
+     * Converts FilePathPDFDocumentBlock to Anthropic's DocumentBlockParam with base64 source.
+     * Reads the PDF file, encodes it to base64, and creates a base64 source.
+     *
+     * @param filePathPdfDocumentBlock our file path PDF document block
+     * @return Anthropic ContentBlockParam wrapping a DocumentBlockParam
+     */
+    protected ContentBlockParam toVendorFilePathPdfDocumentBlock(FilePathPDFDocumentBlock filePathPdfDocumentBlock) {
+        ConversationUtils.validateFilePath(filePathPdfDocumentBlock.filePath(), SUPPORTED_DOCUMENT_EXTENSIONS);
+        ConversationUtils.validateMimeType(filePathPdfDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
+
+        try {
+            Path path = Path.of(filePathPdfDocumentBlock.filePath());
+            byte[] fileBytes = Files.readAllBytes(path);
+            String base64Data = Base64.getEncoder().encodeToString(fileBytes);
+
+            DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
+                    .base64Source(base64Data)
+                    .build();
+
+            return ContentBlockParam.ofDocument(documentBlockParam);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read PDF file: " + filePathPdfDocumentBlock.filePath(), e);
+        }
+    }
+
+    /**
+     * Converts PlainTextDocumentBlock to Anthropic's DocumentBlockParam with text source.
+     *
+     * @param plainTextDocumentBlock our plain text document block
+     * @return Anthropic ContentBlockParam wrapping a DocumentBlockParam
+     */
+    protected ContentBlockParam toVendorPlainTextDocumentBlock(PlainTextDocumentBlock plainTextDocumentBlock) {
+        ConversationUtils.validatePlainText(plainTextDocumentBlock.text());
+        ConversationUtils.validateMimeType(plainTextDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
+
+        DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
+                .textSource(plainTextDocumentBlock.text())
+                .build();
+
+        return ContentBlockParam.ofDocument(documentBlockParam);
     }
 
     @Override
