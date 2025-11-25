@@ -42,7 +42,7 @@ class AnthropicConversationImageTest {
         URLImageBlock urlImage = new URLImageBlock(imageUri, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What do you see in this image?"))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What do you see in this image?", List.of()))
                 .withBlock(urlImage);
 
         // Send the message
@@ -68,7 +68,7 @@ class AnthropicConversationImageTest {
         FilePathImageBlock filePathImage = new FilePathImageBlock(localImagePath, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "Describe what you see in this image."))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "Describe what you see in this image.", List.of()))
                 .withBlock(filePathImage);
 
         // Send the message
@@ -96,7 +96,7 @@ class AnthropicConversationImageTest {
         Base64ImageBlock base64Image = new Base64ImageBlock(base64RedPixel, "image/png");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What color is this image?"))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What color is this image?", List.of()))
                 .withBlock(base64Image);
 
         // Send the message
@@ -125,7 +125,7 @@ class AnthropicConversationImageTest {
         URLImageBlock urlImage = new URLImageBlock(imageUri, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "Compare these two images. What similarities or differences do you notice?"))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "Compare these two images. What similarities or differences do you notice?", List.of()))
                 .withBlock(filePathImage)
                 .withBlock(urlImage);
 
@@ -152,7 +152,7 @@ class AnthropicConversationImageTest {
         FilePathImageBlock filePathImage = new FilePathImageBlock(nonExistentPath, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What's in this image?"))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What's in this image?", List.of()))
                 .withBlock(filePathImage);
 
         // Should throw when trying to convert the message
@@ -168,7 +168,7 @@ class AnthropicConversationImageTest {
         FilePathImageBlock filePathImage = new FilePathImageBlock(localImagePath, "image/bmp");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What's in this image?"))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What's in this image?", List.of()))
                 .withBlock(filePathImage);
 
         // Should throw when trying to validate the MIME type
@@ -184,7 +184,7 @@ class AnthropicConversationImageTest {
         URLImageBlock urlImage = new URLImageBlock(invalidUri, "image/jpeg");
 
         Message userMessage = new Message(MessageRole.USER, List.of())
-                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What's in this image?"))
+                .withBlock(new TextBlock(TextBlockFormat.PLAIN, "What's in this image?", List.of()))
                 .withBlock(urlImage);
 
         // Should throw when trying to validate the URI

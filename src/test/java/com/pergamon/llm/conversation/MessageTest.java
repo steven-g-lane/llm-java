@@ -11,7 +11,7 @@ class MessageTest {
 
     @Test
     void testCreateMessageWithSingleTextBlock() {
-        TextBlock textBlock = new TextBlock(TextBlockFormat.PLAIN, "Hello, World!");
+        TextBlock textBlock = new TextBlock(TextBlockFormat.PLAIN, "Hello, World!", List.of());
         Message message = new Message(MessageRole.USER, List.of(textBlock));
 
         assertEquals(MessageRole.USER, message.role());
@@ -22,7 +22,7 @@ class MessageTest {
     @Test
     void testWithBlockAddsBlockToMessage() {
         Message initial = new Message(MessageRole.USER, List.of());
-        TextBlock textBlock = new TextBlock(TextBlockFormat.PLAIN, "Hello");
+        TextBlock textBlock = new TextBlock(TextBlockFormat.PLAIN, "Hello", List.of());
 
         Message updated = initial.withBlock(textBlock);
 
@@ -34,8 +34,8 @@ class MessageTest {
     @Test
     void testWithBlocksAddsMultipleBlocks() {
         Message initial = new Message(MessageRole.ASSISTANT, List.of());
-        TextBlock block1 = new TextBlock(TextBlockFormat.PLAIN, "First");
-        TextBlock block2 = new TextBlock(TextBlockFormat.MARKDOWN, "**Second**");
+        TextBlock block1 = new TextBlock(TextBlockFormat.PLAIN, "First", List.of());
+        TextBlock block2 = new TextBlock(TextBlockFormat.MARKDOWN, "**Second**", List.of());
 
         Message updated = initial.withBlocks(List.of(block1, block2));
 
@@ -48,17 +48,17 @@ class MessageTest {
     @Test
     void testFluentApiWithMultipleBlockTypes() {
         // Create blocks of different types
-        TextBlock plainText = new TextBlock(TextBlockFormat.PLAIN, "Here is an image from a URL:");
+        TextBlock plainText = new TextBlock(TextBlockFormat.PLAIN, "Here is an image from a URL:", List.of());
         URLImageBlock urlImage = new URLImageBlock(
                 URI.create("https://example.com/photo.jpg"),
                 "image/jpeg"
         );
-        TextBlock markdown = new TextBlock(TextBlockFormat.MARKDOWN, "And here is a **base64** image:");
+        TextBlock markdown = new TextBlock(TextBlockFormat.MARKDOWN, "And here is a **base64** image:", List.of());
         Base64ImageBlock base64Image = new Base64ImageBlock(
                 "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU5ErkJggg==",
                 "image/png"
         );
-        TextBlock htmlText = new TextBlock(TextBlockFormat.HTML, "<p>Finally, some HTML</p>");
+        TextBlock htmlText = new TextBlock(TextBlockFormat.HTML, "<p>Finally, some HTML</p>", List.of());
 
         // Build message fluently
         Message message = new Message(MessageRole.USER, List.of())
@@ -87,12 +87,12 @@ class MessageTest {
 
     @Test
     void testMessageImmutability() {
-        TextBlock block1 = new TextBlock(TextBlockFormat.PLAIN, "Block 1");
+        TextBlock block1 = new TextBlock(TextBlockFormat.PLAIN, "Block 1", List.of());
         Message message = new Message(MessageRole.SYSTEM, List.of(block1));
 
         // Attempting to modify the blocks list should throw exception
         assertThrows(UnsupportedOperationException.class, () -> {
-            message.blocks().add(new TextBlock(TextBlockFormat.PLAIN, "Block 2"));
+            message.blocks().add(new TextBlock(TextBlockFormat.PLAIN, "Block 2", List.of()));
         }, "Blocks list should be immutable");
     }
 
@@ -107,7 +107,7 @@ class MessageTest {
 
     @Test
     void testMessageEquality() {
-        TextBlock block = new TextBlock(TextBlockFormat.PLAIN, "Test");
+        TextBlock block = new TextBlock(TextBlockFormat.PLAIN, "Test", List.of());
         Message msg1 = new Message(MessageRole.USER, List.of(block));
         Message msg2 = new Message(MessageRole.USER, List.of(block));
 

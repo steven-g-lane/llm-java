@@ -3,6 +3,12 @@ package com.pergamon.llm.conversation;
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.models.messages.Base64ImageSource;
+import com.anthropic.models.messages.CitationCharLocation;
+import com.anthropic.models.messages.CitationContentBlockLocation;
+import com.anthropic.models.messages.CitationPageLocation;
+import com.anthropic.models.messages.CitationsConfigParam;
+import com.anthropic.models.messages.CitationsSearchResultLocation;
+import com.anthropic.models.messages.CitationsWebSearchResultLocation;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.DocumentBlockParam;
@@ -19,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -270,8 +277,14 @@ public class AnthropicConversation
         ConversationUtils.validateUri(urlPdfDocumentBlock.uri());
         ConversationUtils.validateMimeType(urlPdfDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
 
+        // Enable citations for document blocks
+        CitationsConfigParam citationsConfig = CitationsConfigParam.builder()
+                .enabled(true)
+                .build();
+
         DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
                 .urlSource(urlPdfDocumentBlock.uri().toString())
+                .citations(citationsConfig)
                 .build();
 
         return ContentBlockParam.ofDocument(documentBlockParam);
@@ -287,8 +300,14 @@ public class AnthropicConversation
         ConversationUtils.validateBase64Data(base64PdfDocumentBlock.base64Data());
         ConversationUtils.validateMimeType(base64PdfDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
 
+        // Enable citations for document blocks
+        CitationsConfigParam citationsConfig = CitationsConfigParam.builder()
+                .enabled(true)
+                .build();
+
         DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
                 .base64Source(base64PdfDocumentBlock.base64Data())
+                .citations(citationsConfig)
                 .build();
 
         return ContentBlockParam.ofDocument(documentBlockParam);
@@ -310,8 +329,14 @@ public class AnthropicConversation
             byte[] fileBytes = Files.readAllBytes(path);
             String base64Data = Base64.getEncoder().encodeToString(fileBytes);
 
+            // Enable citations for document blocks
+            CitationsConfigParam citationsConfig = CitationsConfigParam.builder()
+                    .enabled(true)
+                    .build();
+
             DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
                     .base64Source(base64Data)
+                    .citations(citationsConfig)
                     .build();
 
             return ContentBlockParam.ofDocument(documentBlockParam);
@@ -330,8 +355,14 @@ public class AnthropicConversation
         ConversationUtils.validatePlainText(plainTextDocumentBlock.text());
         ConversationUtils.validateMimeType(plainTextDocumentBlock.mimeType(), SUPPORTED_DOCUMENT_MIME_TYPES);
 
+        // Enable citations for document blocks
+        CitationsConfigParam citationsConfig = CitationsConfigParam.builder()
+                .enabled(true)
+                .build();
+
         DocumentBlockParam documentBlockParam = DocumentBlockParam.builder()
                 .textSource(plainTextDocumentBlock.text())
+                .citations(citationsConfig)
                 .build();
 
         return ContentBlockParam.ofDocument(documentBlockParam);
@@ -451,7 +482,105 @@ public class AnthropicConversation
     protected MessageBlock fromVendorTextBlock(com.anthropic.models.messages.TextBlock anthropicTextBlock) {
         String text = anthropicTextBlock.text();
         TextBlockFormat format = ConversationUtils.detectTextFormat(text);
-        return new TextBlock(format, text);
+
+        // Convert citations if present
+        List<TextCitation> citations = new ArrayList<>();
+        if (anthropicTextBlock.citations().isPresent()) {
+            for (var anthropicCitation : anthropicTextBlock.citations().get()) {
+                citations.add(fromVendorCitation(anthropicCitation));
+            }
+        }
+
+        return new TextBlock(format, text, citations);
+    }
+
+    /**
+     * Converts Anthropic's TextCitation to our TextCitation.
+     * The Anthropic SDK's TextCitation has optional fields for each citation type;
+     * exactly one will be present.
+     *
+     * @param anthropicCitation Anthropic's TextCitation
+     * @return our TextCitation
+     */
+    protected TextCitation fromVendorCitation(com.anthropic.models.messages.TextCitation anthropicCitation) {
+        // Check for char location citation
+        if (anthropicCitation.charLocation().isPresent()) {
+            CitationCharLocation charLoc = anthropicCitation.charLocation().get();
+            return new CharLocationCitation(
+                charLoc.citedText(),
+                charLoc.documentTitle().orElse("Untitled"),
+                "char_location",
+                Optional.of(charLoc.documentIndex()),
+                charLoc.documentTitle(),
+                charLoc.fileId(),
+                Optional.of(charLoc.startCharIndex()),
+                Optional.of(charLoc.endCharIndex())
+            );
+        }
+
+        // Check for page location citation
+        if (anthropicCitation.pageLocation().isPresent()) {
+            CitationPageLocation pageLoc = anthropicCitation.pageLocation().get();
+            return new PageLocationCitation(
+                pageLoc.citedText(),
+                pageLoc.documentTitle().orElse("Untitled"),
+                "page_location",
+                Optional.of(pageLoc.documentIndex()),
+                pageLoc.documentTitle(),
+                pageLoc.fileId(),
+                Optional.of(pageLoc.startPageNumber()),
+                Optional.of(pageLoc.endPageNumber())
+            );
+        }
+
+        // Check for content block location citation
+        if (anthropicCitation.contentBlockLocation().isPresent()) {
+            CitationContentBlockLocation blockLoc = anthropicCitation.contentBlockLocation().get();
+            return new ContentBlockLocationCitation(
+                blockLoc.citedText(),
+                blockLoc.documentTitle().orElse("Untitled"),
+                "content_block_location",
+                Optional.of(blockLoc.documentIndex()),
+                blockLoc.documentTitle(),
+                blockLoc.fileId(),
+                Optional.of(blockLoc.startBlockIndex()),
+                Optional.of(blockLoc.endBlockIndex())
+            );
+        }
+
+        // Check for web search result location citation
+        if (anthropicCitation.webSearchResultLocation().isPresent()) {
+            CitationsWebSearchResultLocation webLoc = anthropicCitation.webSearchResultLocation().get();
+            return new WebSearchResultCitation(
+                webLoc.citedText(),
+                webLoc.title().orElse("Untitled"),
+                "web_search_result_location",
+                Optional.of(webLoc.url()),
+                Optional.of(webLoc.encryptedIndex())
+            );
+        }
+
+        // Check for search result location citation
+        if (anthropicCitation.searchResultLocation().isPresent()) {
+            CitationsSearchResultLocation searchLoc = anthropicCitation.searchResultLocation().get();
+            return new SearchResultCitation(
+                searchLoc.citedText(),
+                searchLoc.title().orElse("Untitled"),
+                "search_result_location",
+                Optional.of(searchLoc.source()),
+                Optional.of(searchLoc.startBlockIndex()),
+                Optional.of(searchLoc.endBlockIndex()),
+                Optional.of(searchLoc.searchResultIndex())
+            );
+        }
+
+        // Unknown citation type - store raw data for future compatibility
+        return new UnknownCitation(
+            "Unknown citation",
+            "Unknown",
+            "unknown",
+            anthropicCitation.toString()
+        );
     }
 
     /**

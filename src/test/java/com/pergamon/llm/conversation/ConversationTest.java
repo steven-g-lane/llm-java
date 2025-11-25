@@ -2,6 +2,8 @@ package com.pergamon.llm.conversation;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static com.pergamon.llm.conversation.TestFixtures.*;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -39,7 +41,7 @@ class ConversationTest {
         @Override
         protected Message fromVendorResponse(String vendorResponse) {
             return new Message(MessageRole.ASSISTANT, java.util.List.of(
-                new TextBlock(TextBlockFormat.PLAIN, "test response")
+                new TextBlock(TextBlockFormat.PLAIN, "test response", List.of())
             ));
         }
     }

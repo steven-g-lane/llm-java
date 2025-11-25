@@ -23,7 +23,7 @@ public class TestFixtures {
     // Factory methods
 
     public static TextBlock createPlainTextBlock(String text) {
-        return new TextBlock(TextBlockFormat.PLAIN, text);
+        return new TextBlock(TextBlockFormat.PLAIN, text, List.of());
     }
 
     public static Message createUserMessage(String text) {

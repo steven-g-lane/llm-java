@@ -72,7 +72,7 @@ public class LoggingIntegrationTest {
         // Create a simple user message
         Message userMessage = new Message(
             MessageRole.USER,
-            List.of(new TextBlock(TextBlockFormat.PLAIN, "Say hello in one word."))
+            List.of(new TextBlock(TextBlockFormat.PLAIN, "Say hello in one word.", List.of()))
         );
 
         System.out.println("=== Testing API Logging ===");
@@ -119,7 +119,7 @@ public class LoggingIntegrationTest {
         // Create a simple user message
         Message userMessage = new Message(
             MessageRole.USER,
-            List.of(new TextBlock(TextBlockFormat.PLAIN, "Test"))
+            List.of(new TextBlock(TextBlockFormat.PLAIN, "Test", List.of()))
         );
 
         // Attempt to send the message - this should fail and trigger exception logging
@@ -165,7 +165,7 @@ public class LoggingIntegrationTest {
             System.out.println("Sending message " + i + " of " + messageCount);
             Message userMessage = new Message(
                 MessageRole.USER,
-                List.of(new TextBlock(TextBlockFormat.PLAIN, "Count to " + i))
+                List.of(new TextBlock(TextBlockFormat.PLAIN, "Count to " + i, List.of()))
             );
             conversation.sendMessage(userMessage);
         }
@@ -214,7 +214,7 @@ public class LoggingIntegrationTest {
         System.out.println("\n--- Turn 1: Initial Story Request ---");
         Message initialMessage = new Message(
             MessageRole.USER,
-            List.of(new TextBlock(TextBlockFormat.PLAIN, "Tell me a bedtime story!"))
+            List.of(new TextBlock(TextBlockFormat.PLAIN, "Tell me a bedtime story!", List.of()))
         );
         Message response1 = conversation.sendMessage(initialMessage);
         assertNotNull(response1, "First response should not be null");
@@ -229,7 +229,7 @@ public class LoggingIntegrationTest {
             System.out.println("\n--- Turn " + (i + 1) + ": But Why #" + i + " ---");
             Message followUp = new Message(
                 MessageRole.USER,
-                List.of(new TextBlock(TextBlockFormat.PLAIN, "But why???"))
+                List.of(new TextBlock(TextBlockFormat.PLAIN, "But why???", List.of()))
             );
             Message response = conversation.sendMessage(followUp);
             assertNotNull(response, "Response " + (i + 1) + " should not be null");

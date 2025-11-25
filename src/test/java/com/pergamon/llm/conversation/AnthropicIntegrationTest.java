@@ -36,7 +36,7 @@ public class AnthropicIntegrationTest {
 
         Message userMessage = new Message(
             MessageRole.USER,
-            List.of(new TextBlock(TextBlockFormat.PLAIN, prompt))
+            List.of(new TextBlock(TextBlockFormat.PLAIN, prompt, List.of()))
         );
 
         System.out.println("=== Sending message to Anthropic ===");
