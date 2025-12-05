@@ -4,11 +4,17 @@ import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.CitationCharLocation;
+import com.anthropic.models.messages.CitationCharLocationParam;
 import com.anthropic.models.messages.CitationContentBlockLocation;
+import com.anthropic.models.messages.CitationContentBlockLocationParam;
 import com.anthropic.models.messages.CitationPageLocation;
+import com.anthropic.models.messages.CitationPageLocationParam;
+import com.anthropic.models.messages.CitationSearchResultLocationParam;
+import com.anthropic.models.messages.CitationWebSearchResultLocationParam;
 import com.anthropic.models.messages.CitationsConfigParam;
 import com.anthropic.models.messages.CitationsSearchResultLocation;
 import com.anthropic.models.messages.CitationsWebSearchResultLocation;
+import com.anthropic.models.messages.TextCitationParam;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.DocumentBlockParam;
@@ -16,7 +22,9 @@ import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.ToolUnion;
 import com.anthropic.models.messages.UrlImageSource;
+import com.anthropic.models.messages.WebSearchTool20250305;
 // Note: TextBlock from Anthropic SDK accessed via fully qualified name to avoid conflict with our TextBlock
 
 import java.io.IOException;
@@ -379,13 +387,35 @@ public class AnthropicConversation
                     .model(model)
                     .maxTokens(MAX_TOKENS);
 
+            // Enable web search for all requests
+            WebSearchTool20250305 webSearchTool = WebSearchTool20250305.builder()
+                    .maxUses(5L)
+                    .build();
+            paramsBuilder.addTool(ToolUnion.ofWebSearchTool20250305(webSearchTool));
+
             // Add all vendor messages (the entire conversation history)
             for (MessageParam msg : vendorMessages) {
                 paramsBuilder.addMessage(msg);
             }
 
+            // Build the final params
+            MessageCreateParams params = paramsBuilder.build();
+
+            // Log the full payload being sent (including all conversation history)
+            System.out.println("\n=== FULL API REQUEST PAYLOAD ===");
+            System.out.println("Model: " + params.model());
+            System.out.println("Max Tokens: " + params.maxTokens());
+            System.out.println("Tools: " + params.tools());
+            System.out.println("Message Count: " + params.messages().size());
+            for (int i = 0; i < params.messages().size(); i++) {
+                MessageParam msg = params.messages().get(i);
+                System.out.println("\n--- Message " + i + " (Role: " + msg.role() + ") ---");
+                System.out.println(msg.toString());
+            }
+            System.out.println("=== END PAYLOAD ===\n");
+
             // Make the synchronous (non-streaming) API call with full conversation context
-            return client.messages().create(paramsBuilder.build());
+            return client.messages().create(params);
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to send conversation to Anthropic", e);
@@ -399,16 +429,13 @@ public class AnthropicConversation
         List<ContentBlockParam> contentBlockParams = new ArrayList<>();
 
         for (ContentBlock contentBlock : vendorResponse.content()) {
-            // Convert each ContentBlock to a ContentBlockParam
-            if (contentBlock.text().isPresent()) {
-                // It's a text block
-                com.anthropic.models.messages.TextBlock textBlock = contentBlock.text().get();
-                TextBlockParam textBlockParam = TextBlockParam.builder()
-                        .text(textBlock.text())
-                        .build();
-                contentBlockParams.add(ContentBlockParam.ofText(textBlockParam));
-            }
-            // Add support for other block types (image, etc.) as needed
+            // Use the built-in toParam() method which handles all block types including:
+            // - TextBlock (with citations)
+            // - ServerToolUseBlock (web search tool invocations)
+            // - WebSearchToolResultBlock (search results that citations reference)
+            // - ThinkingBlock, ToolUseBlock, etc.
+            // This ensures web search results are preserved in conversation history so citations work
+            contentBlockParams.add(contentBlock.toParam());
         }
 
         return MessageParam.builder()
@@ -581,6 +608,76 @@ public class AnthropicConversation
             "unknown",
             anthropicCitation.toString()
         );
+    }
+
+    /**
+     * Converts our TextCitation to Anthropic's TextCitationParam for storing in conversation history.
+     * This is the reverse operation of fromVendorCitation().
+     *
+     * @param citation our TextCitation
+     * @return Anthropic's TextCitationParam
+     */
+    protected TextCitationParam toVendorCitation(TextCitation citation) {
+        return switch (citation) {
+            case CharLocationCitation charCitation -> {
+                CitationCharLocationParam param = CitationCharLocationParam.builder()
+                        .citedText(charCitation.citedText())
+                        .documentIndex(charCitation.documentIndex().orElseThrow())
+                        .startCharIndex(charCitation.startCharIndex().orElseThrow())
+                        .endCharIndex(charCitation.endCharIndex().orElseThrow())
+                        .documentTitle(charCitation.documentTitle().orElse(null))
+                        .build();
+                yield TextCitationParam.ofCharLocation(param);
+            }
+            case PageLocationCitation pageCitation -> {
+                CitationPageLocationParam param = CitationPageLocationParam.builder()
+                        .citedText(pageCitation.citedText())
+                        .documentIndex(pageCitation.documentIndex().orElseThrow())
+                        .startPageNumber(pageCitation.startPageNumber().orElseThrow())
+                        .endPageNumber(pageCitation.endPageNumber().orElseThrow())
+                        .documentTitle(pageCitation.documentTitle().orElse(null))
+                        .build();
+                yield TextCitationParam.ofPageLocation(param);
+            }
+            case ContentBlockLocationCitation blockCitation -> {
+                CitationContentBlockLocationParam param = CitationContentBlockLocationParam.builder()
+                        .citedText(blockCitation.citedText())
+                        .documentIndex(blockCitation.documentIndex().orElseThrow())
+                        .startBlockIndex(blockCitation.startBlockIndex().orElseThrow())
+                        .endBlockIndex(blockCitation.endBlockIndex().orElseThrow())
+                        .documentTitle(blockCitation.documentTitle().orElse(null))
+                        .build();
+                yield TextCitationParam.ofContentBlockLocation(param);
+            }
+            case WebSearchResultCitation webCitation -> {
+                CitationWebSearchResultLocationParam param = CitationWebSearchResultLocationParam.builder()
+                        .citedText(webCitation.citedText())
+                        .url(webCitation.url().orElseThrow())
+                        .encryptedIndex(webCitation.encryptedIndex().orElseThrow())
+                        .title(webCitation.title())
+                        .build();
+                yield TextCitationParam.ofWebSearchResultLocation(param);
+            }
+            case SearchResultCitation searchCitation -> {
+                CitationSearchResultLocationParam param = CitationSearchResultLocationParam.builder()
+                        .citedText(searchCitation.citedText())
+                        .source(searchCitation.source().orElseThrow())
+                        .startBlockIndex(searchCitation.startBlockIndex().orElseThrow())
+                        .endBlockIndex(searchCitation.endBlockIndex().orElseThrow())
+                        .searchResultIndex(searchCitation.searchResultIndex().orElseThrow())
+                        .title(searchCitation.title())
+                        .build();
+                yield TextCitationParam.ofSearchResultLocation(param);
+            }
+            case UnknownCitation unknownCitation ->
+                // Cannot convert unknown citations back to params - skip them
+                // This should be rare and only happens with new citation types we don't support yet
+                throw new UnsupportedOperationException(
+                    "Cannot convert UnknownCitation to TextCitationParam: " + unknownCitation.rawData());
+            default ->
+                throw new UnsupportedOperationException(
+                    "Unsupported citation type: " + citation.getClass().getName());
+        };
     }
 
     /**
