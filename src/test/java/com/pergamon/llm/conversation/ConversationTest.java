@@ -15,12 +15,23 @@ class ConversationTest {
      * without requiring actual vendor API calls.
      */
     private static class TestConversation extends Conversation<String, String> {
+        private long nextInputTokens = 100L;
+        private long nextOutputTokens = 20L;
+
         TestConversation(ModelId modelId) {
             super(modelId);
         }
 
         TestConversation(ModelId modelId, String name) {
             super(modelId, name);
+        }
+
+        /**
+         * Sets the token values that will be returned in the next response message.
+         */
+        void setNextTokenCounts(long inputTokens, long outputTokens) {
+            this.nextInputTokens = inputTokens;
+            this.nextOutputTokens = outputTokens;
         }
 
         @Override
@@ -40,9 +51,22 @@ class ConversationTest {
 
         @Override
         protected Message fromVendorResponse(String vendorResponse) {
-            return new Message(MessageRole.ASSISTANT, java.util.List.of(
-                new TextBlock(TextBlockFormat.PLAIN, "test response", List.of())
-            ));
+            return new Message(
+                MessageRole.ASSISTANT,
+                java.util.List.of(new TextBlock(TextBlockFormat.PLAIN, "test response", List.of())),
+                nextInputTokens,
+                nextOutputTokens
+            );
+        }
+
+        @Override
+        protected boolean isCacheable() {
+            return false; // Test conversation doesn't support caching
+        }
+
+        @Override
+        protected void configureCaching() {
+            // No-op for test conversation
         }
     }
 
@@ -299,5 +323,90 @@ class ConversationTest {
         assertEquals(2, conversation.messages().size());
         assertTrue(conversation.isStarred());
         assertEquals(CLAUDE_SONNET_45, conversation.modelId());
+    }
+
+    @Test
+    void testTokenCountsInitiallyZero() {
+        TestConversation conversation = new TestConversation(CLAUDE_SONNET_45);
+
+        assertEquals(0L, conversation.getTotalInputTokens(), "Initial input tokens should be 0");
+        assertEquals(0L, conversation.getTotalOutputTokens(), "Initial output tokens should be 0");
+    }
+
+    @Test
+    void testSendMessageAccumulatesTokens() {
+        TestConversation conversation = new TestConversation(CLAUDE_SONNET_45);
+        conversation.setNextTokenCounts(150L, 25L);
+
+        Message userMessage = createUserMessage("Hello");
+        Message response = conversation.sendMessage(userMessage);
+
+        assertEquals(150L, response.inputTokens());
+        assertEquals(25L, response.outputTokens());
+        assertEquals(150L, conversation.getTotalInputTokens());
+        assertEquals(25L, conversation.getTotalOutputTokens());
+    }
+
+    @Test
+    void testMultipleSendMessageAccumulatesTokens() {
+        TestConversation conversation = new TestConversation(CLAUDE_SONNET_45);
+
+        // First message
+        conversation.setNextTokenCounts(150L, 25L);
+        conversation.sendMessage(createUserMessage("First message"));
+
+        // Second message with different token counts
+        conversation.setNextTokenCounts(200L, 35L);
+        conversation.sendMessage(createUserMessage("Second message"));
+
+        // Third message
+        conversation.setNextTokenCounts(175L, 30L);
+        conversation.sendMessage(createUserMessage("Third message"));
+
+        // Verify totals are accumulated
+        assertEquals(525L, conversation.getTotalInputTokens(), "Total input tokens should be 150 + 200 + 175");
+        assertEquals(90L, conversation.getTotalOutputTokens(), "Total output tokens should be 25 + 35 + 30");
+    }
+
+    @Test
+    void testClearMessagesResetTokenCounters() {
+        TestConversation conversation = new TestConversation(CLAUDE_SONNET_45);
+
+        // Send some messages to accumulate tokens
+        conversation.setNextTokenCounts(150L, 25L);
+        conversation.sendMessage(createUserMessage("First message"));
+        conversation.setNextTokenCounts(200L, 35L);
+        conversation.sendMessage(createUserMessage("Second message"));
+
+        assertEquals(350L, conversation.getTotalInputTokens());
+        assertEquals(60L, conversation.getTotalOutputTokens());
+
+        // Clear messages
+        conversation.clearMessages();
+
+        // Verify tokens are reset
+        assertEquals(0L, conversation.getTotalInputTokens(), "Input tokens should be reset to 0");
+        assertEquals(0L, conversation.getTotalOutputTokens(), "Output tokens should be reset to 0");
+        assertTrue(conversation.messages().isEmpty(), "Messages should be cleared");
+    }
+
+    @Test
+    void testUserMessageHasZeroTokens() {
+        Message userMessage = createUserMessage("Hello");
+
+        assertEquals(0L, userMessage.inputTokens(), "User messages should have 0 input tokens");
+        assertEquals(0L, userMessage.outputTokens(), "User messages should have 0 output tokens");
+    }
+
+    @Test
+    void testAssistantMessageFromVendorHasTokens() {
+        TestConversation conversation = new TestConversation(CLAUDE_SONNET_45);
+        conversation.setNextTokenCounts(150L, 25L);
+
+        Message response = conversation.sendMessage(createUserMessage("Hello"));
+
+        assertEquals(MessageRole.ASSISTANT, response.role());
+        assertEquals(150L, response.inputTokens(), "Assistant response should have input tokens from API");
+        assertEquals(25L, response.outputTokens(), "Assistant response should have output tokens from API");
     }
 }

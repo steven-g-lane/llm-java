@@ -53,6 +53,7 @@ public class AnthropicConversation
         extends Conversation<MessageParam, com.anthropic.models.messages.Message> {
 
     private static final int MAX_TOKENS = 4096;
+    private static final boolean CACHING_AVAILABLE = true;
 
     private static final Set<String> SUPPORTED_IMAGE_EXTENSIONS = Set.of(
             ".png", ".jpg", ".jpeg", ".gif", ".webp"
@@ -70,6 +71,18 @@ public class AnthropicConversation
 
     private final String apiKey;
     private final AnthropicClient client;
+
+    /**
+     * Cumulative cache creation input tokens across all messages in the conversation.
+     * These represent tokens used when creating new cache entries.
+     */
+    private long totalCacheCreationInputTokens = 0L;
+
+    /**
+     * Cumulative cache read input tokens across all messages in the conversation.
+     * These represent tokens read from existing cache entries (at reduced cost).
+     */
+    private long totalCacheReadInputTokens = 0L;
 
     /**
      * Creates an Anthropic conversation with the specified model ID and API key.
@@ -464,7 +477,19 @@ public class AnthropicConversation
             blocks.add(fromVendorContentBlock(contentBlock));
         }
 
-        return new Message(role, blocks);
+        // Extract token usage from the vendor response
+        long inputTokens = vendorResponse.usage().inputTokens();
+        long outputTokens = vendorResponse.usage().outputTokens();
+
+        // Extract cache token usage if present
+        long cacheCreationTokens = vendorResponse.usage().cacheCreationInputTokens().orElse(0L);
+        long cacheReadTokens = vendorResponse.usage().cacheReadInputTokens().orElse(0L);
+
+        // Accumulate cache tokens
+        totalCacheCreationInputTokens += cacheCreationTokens;
+        totalCacheReadInputTokens += cacheReadTokens;
+
+        return new Message(role, blocks, inputTokens, outputTokens);
     }
 
     /**
@@ -696,5 +721,128 @@ public class AnthropicConversation
             case "image/webp" -> Base64ImageSource.MediaType.IMAGE_WEBP;
             default -> throw new IllegalArgumentException("Unsupported MIME type: " + mimeType);
         };
+    }
+
+    @Override
+    protected boolean isCacheable() {
+        return CACHING_AVAILABLE;
+    }
+
+    @Override
+    protected void configureCaching() {
+        // Find the last cacheable block in the conversation and add cache control to it
+        // Walk backwards through vendorMessages to find the most recent cacheable block
+
+        // TODO: Add support for caching on tool use blocks when tools are implemented
+        // TODO: Add support for caching on system prompts when system prompts are supported
+        // TODO: Anthropic only caches up to 20 blocks - need to handle this limitation
+        //       (currently we only cache one block, but when we expand to multiple cache points,
+        //       we'll need to ensure we don't exceed the 20-block limit)
+
+        for (int i = vendorMessages.size() - 1; i >= 0; i--) {
+            MessageParam message = vendorMessages.get(i);
+
+            // Get the content from the message
+            if (message.content() == null) {
+                continue;
+            }
+
+            // Try to get block params from the content
+            Optional<List<ContentBlockParam>> blockParamsOpt = message.content().blockParams();
+            if (blockParamsOpt.isEmpty()) {
+                continue;
+            }
+
+            List<ContentBlockParam> blockParams = blockParamsOpt.get();
+
+            // Walk backwards through the blocks to find the last cacheable one
+            for (int j = blockParams.size() - 1; j >= 0; j--) {
+                ContentBlockParam block = blockParams.get(j);
+
+                // Try to rebuild the block with cache control
+                ContentBlockParam rebuiltBlock = rebuildBlockWithCacheControl(block);
+                if (rebuiltBlock != null) {
+                    // Replace the block in the list
+                    List<ContentBlockParam> newBlockParams = new ArrayList<>(blockParams);
+                    newBlockParams.set(j, rebuiltBlock);
+
+                    // Rebuild the message with the updated blocks
+                    MessageParam newMessage = MessageParam.builder()
+                            .role(message.role())
+                            .content(MessageParam.Content.ofBlockParams(newBlockParams))
+                            .build();
+
+                    // Replace the message in vendorMessages
+                    vendorMessages.set(i, newMessage);
+
+                    // We found and updated the last cacheable block, so we're done
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
+     * Attempts to rebuild a ContentBlockParam with cache control.
+     * Returns the rebuilt block if successful, or null if the block type doesn't support caching.
+     *
+     * @param block the original block
+     * @return the rebuilt block with cache control, or null if not cacheable
+     */
+    private ContentBlockParam rebuildBlockWithCacheControl(ContentBlockParam block) {
+        // Create the cache control object once and reuse it
+        var cacheControl = com.anthropic.models.messages.CacheControlEphemeral.builder()
+                .ttl(com.anthropic.models.messages.CacheControlEphemeral.Ttl.TTL_5M)
+                .build();
+
+        // Check if this is a TextBlockParam
+        if (block.text().isPresent()) {
+            TextBlockParam textBlock = block.text().get();
+            TextBlockParam rebuiltTextBlock = textBlock.toBuilder()
+                    .cacheControl(cacheControl)
+                    .build();
+            return ContentBlockParam.ofText(rebuiltTextBlock);
+        }
+
+        // Check if this is an ImageBlockParam
+        if (block.image().isPresent()) {
+            ImageBlockParam imageBlock = block.image().get();
+            ImageBlockParam rebuiltImageBlock = imageBlock.toBuilder()
+                    .cacheControl(cacheControl)
+                    .build();
+            return ContentBlockParam.ofImage(rebuiltImageBlock);
+        }
+
+        // Check if this is a DocumentBlockParam
+        if (block.document().isPresent()) {
+            DocumentBlockParam docBlock = block.document().get();
+            DocumentBlockParam rebuiltDocBlock = docBlock.toBuilder()
+                    .cacheControl(cacheControl)
+                    .build();
+            return ContentBlockParam.ofDocument(rebuiltDocBlock);
+        }
+
+        // This block type doesn't support caching (or we don't support it yet)
+        return null;
+    }
+
+    /**
+     * Returns the cumulative cache creation input tokens across all messages.
+     * These represent tokens used when creating new cache entries.
+     *
+     * @return the total cache creation input tokens
+     */
+    public long getTotalCacheCreationInputTokens() {
+        return totalCacheCreationInputTokens;
+    }
+
+    /**
+     * Returns the cumulative cache read input tokens across all messages.
+     * These represent tokens read from existing cache entries (at reduced cost).
+     *
+     * @return the total cache read input tokens
+     */
+    public long getTotalCacheReadInputTokens() {
+        return totalCacheReadInputTokens;
     }
 }
